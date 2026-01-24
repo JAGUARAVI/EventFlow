@@ -28,6 +28,7 @@ import TeamMetadataDisplay from '../components/TeamMetadataDisplay';
 import PdfExportDialog from '../components/PdfExportDialog';
 import { generateSingleElimination, generateRoundRobin, generateSwiss } from '../lib/bracket';
 import { useLiveVotes } from '../hooks/useLiveVotes';
+import { useRealtimePolls } from '../hooks/useRealtimePolls';
 
 export default function EventPage() {
   const { id } = useParams();
@@ -55,6 +56,7 @@ export default function EventPage() {
   const { isOpen: isPollEditorOpen, onOpen: onPollEditorOpen, onClose: onPollEditorClose } = useDisclosure();
   const [selectedPoll, setSelectedPoll] = useState(null);
   const [selectedPollForVote, setSelectedPollForVote] = useState(null);
+  const [pollSearch, setPollSearch] = useState('');
 
   const { isOpen: isTeamOpen, onOpen: onTeamOpen, onClose: onTeamClose } = useDisclosure();
   const [teamName, setTeamName] = useState('');
@@ -218,6 +220,7 @@ export default function EventPage() {
 
   useRealtimeLeaderboard(id, setTeams);
   useRealtimeBracket(id, setMatches);
+  useRealtimePolls(id, setPolls, setPollOptions);
 
   const buildBracketMatches = (type) => {
     if (type === 'single_elim') return generateSingleElimination(id, teams);
@@ -987,24 +990,45 @@ export default function EventPage() {
         {hasType('poll') && (
         <Tab key="polls" title="Polls">
           <div className="pt-4">
-            {canManage && (
-              <Button size="sm" color="primary" className="mb-3" onPress={() => {
-                setSelectedPoll(null);
-                onPollEditorOpen();
-              }}>
-                Create poll
-              </Button>
-            )}
+            <div className="flex flex-col md:flex-row gap-3 justify-between items-start mb-4">
+              <Input
+                startContent={<Search className="text-default-400" size={16} />}
+                placeholder="Search polls..."
+                value={pollSearch}
+                onValueChange={setPollSearch}
+                className="max-w-xs"
+                isClearable
+                onClear={() => setPollSearch('')}
+              />
+              {canManage && (
+                <Button size="sm" color="primary" onPress={() => {
+                  setSelectedPoll(null);
+                  onPollEditorOpen();
+                }}>
+                  Create poll
+                </Button>
+              )}
+            </div>
+            
             {polls.length === 0 ? (
               <p className="text-default-500 text-sm">No polls yet.</p>
             ) : (
               <div className="space-y-3">
-                {polls.map((poll) => (
+                {polls
+                  .filter(p => !pollSearch || p.question.toLowerCase().includes(pollSearch.toLowerCase()))
+                  .map((poll) => (
                   <div key={poll.id} className="border border-default-200 rounded-lg p-4 space-y-2">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold">{poll.question}</p>
-                        <p className="text-xs text-default-500 mt-1">Status: {poll.status}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Chip size="sm" variant="flat" color={poll.status === 'open' ? 'success' : poll.status === 'closed' ? 'default' : 'warning'}>
+                            {poll.status}
+                          </Chip>
+                          <span className="text-xs text-default-400">
+                             {new Date(poll.created_at).toLocaleString()}
+                          </span>
+                        </div>
                       </div>
                       {canManage && (
                         <div className="flex flex-wrap gap-2">
@@ -1122,6 +1146,8 @@ export default function EventPage() {
                       options={pollOptions[poll.id] || []}
                       isLive={poll.status === 'open'}
                       pollType={poll.poll_type}
+                      resultsHidden={poll.results_hidden}
+                      canManage={canManage}
                     />
                   </div>
                 ))}
@@ -1321,7 +1347,16 @@ export default function EventPage() {
   );
 }
 
-function PollResultsLive({ pollId, options, isLive, pollType }) {
+function PollResultsLive({ pollId, options, isLive, pollType, resultsHidden, canManage }) {
   const votes = useLiveVotes(pollId);
-  return <PollResults options={options} votes={votes} isLive={isLive} pollType={pollType} />;
+  return (
+    <PollResults 
+      options={options} 
+      votes={votes} 
+      isLive={isLive} 
+      pollType={pollType} 
+      resultsHidden={resultsHidden}
+      canManage={canManage}
+    />
+  );
 }

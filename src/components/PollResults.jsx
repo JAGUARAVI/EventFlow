@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { EyeOff } from 'lucide-react';
 
-export default function PollResults({ options, votes, isLive, pollType = 'simple' }) {
+export default function PollResults({ options, votes, isLive, pollType = 'simple', resultsHidden = false, canManage = false }) {
   // Compute results based on poll type
   const { resultsMap, maxVal, totalMetric } = useMemo(() => {
     const map = {}; // optionId -> value (count or score)
@@ -50,6 +51,15 @@ export default function PollResults({ options, votes, isLive, pollType = 'simple
     
     return { resultsMap: map, maxVal: max, totalMetric: total };
   }, [votes, options, pollType]);
+
+  if (resultsHidden && !canManage) {
+    return (
+      <div className="p-4 border border-dashed rounded-lg flex flex-col items-center justify-center text-default-500 gap-2">
+        <EyeOff size={24} />
+        <p className="text-sm">Results hidden by host</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
