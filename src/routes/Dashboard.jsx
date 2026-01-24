@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, CardBody, Spinner } from '@heroui/react';
 import { supabase } from '../lib/supabase';
@@ -14,9 +14,11 @@ export default function Dashboard() {
   const isAdmin = profile && profile.role === 'admin';
   const isViewer = profile && profile.role === 'viewer';
 
-  useEffect(() => {
+  const fetch = useCallback(async (showLoading = true) => {
     if (!user?.id || !profile?.role) return;
-    (async () => {
+    if (showLoading) setLoading(true);
+
+    try {
       const baseEventsQuery = supabase
         .from('events')
         .select('id, name, type, event_types, visibility, created_at')
@@ -73,10 +75,16 @@ export default function Dashboard() {
           openPolls: openPollsCount.count || 0,
         });
       }
-
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+    } finally {
       setLoading(false);
-    })();
+    }
   }, [user?.id, profile?.role, isAdmin, isViewer]);
+
+  useEffect(() => {
+    fetch(true);
+  }, [fetch]);
 
   return (
     <div className="p-6 max-w-5xl mx-auto">

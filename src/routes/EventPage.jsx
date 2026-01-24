@@ -127,9 +127,9 @@ export default function EventPage() {
     return matchesName || matchesDesc || matchesMetadata;
   });
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (showLoading = false) => {
     if (!id) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes, rRes] = await Promise.all([
       supabase.from('events').select('*').eq('id', id).single(),
       supabase.from('teams').select('*').eq('event_id', id).order('created_at'),
@@ -199,7 +199,7 @@ export default function EventPage() {
   }, [id]);
 
   useEffect(() => {
-    fetch();
+    fetch(true);
   }, [fetch]);
 
   useEffect(() => {
