@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Select, SelectItem, addToast } from '@heroui/react';
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Select, SelectItem, Switch, addToast } from '@heroui/react';
 import { supabase } from '../lib/supabase';
 
 export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUpdate, currentUserId }) {
   const [question, setQuestion] = useState('');
   const [pollType, setPollType] = useState('simple');
+  const [resultsHidden, setResultsHidden] = useState(false);
   const [options, setOptions] = useState([]);
   const [newOptionLabel, setNewOptionLabel] = useState('');
   const [saving, setSaving] = useState(false);
@@ -13,10 +14,12 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
     if (poll && isOpen) {
       setQuestion(poll.question || '');
       setPollType(poll.poll_type || 'simple');
+      setResultsHidden(poll.results_hidden || false);
       fetchOptions();
     } else if (!poll && isOpen) {
       setQuestion('');
       setPollType('simple');
+      setResultsHidden(false);
       setOptions([]);
     }
   }, [poll, isOpen]);
@@ -33,7 +36,7 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
 
   const addOption = () => {
     if (!newOptionLabel.trim()) return;
-    setOptions([...options, { label: newOptionLabel, points: 1, team_id: null, display_order: options.length }]);
+    setOptions([...options, { label: newOptionLabel, points: 1, image_url: '', team_id: null, display_order: options.length }]);
     setNewOptionLabel('');
   };
 
@@ -55,7 +58,7 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
     try {
       if (poll?.id) {
         // Update existing poll
-        await supabase.from('polls').update({ question, poll_type: pollType }).eq('id', poll.id);
+        await supabase.from('polls').update({ question, poll_type: pollType, results_hidden: resultsHidden }).eq('id', poll.id);
         await supabase.from('event_audit').insert({
           event_id: eventId,
           action: 'poll.edit',
@@ -68,16 +71,27 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
         for (let i = 0; i < options.length; i++) {
           const opt = options[i];
           if (opt.id) {
-            await supabase.from('poll_options').update({ label: opt.label, points: opt.points, display_order: i }).eq('id', opt.id);
+            await supabase.from('poll_options').update({ 
+              label: opt.label, 
+              points: opt.points, 
+              image_url: opt.image_url,
+              display_order: i 
+            }).eq('id', opt.id);
           } else {
-            await supabase.from('poll_options').insert({ poll_id: poll.id, label: opt.label, points: opt.points, display_order: i });
+            await supabase.from('poll_options').insert({ 
+              poll_id: poll.id, 
+              label: opt.label, 
+              points: opt.points, 
+              image_url: opt.image_url,
+              display_order: i 
+            });
           }
         }
       } else {
         // Create new poll
         const { data: newPoll, error: pollErr } = await supabase
           .from('polls')
-          .insert({ event_id: eventId, question, poll_type: pollType })
+          .insert({ event_id: eventId, question, poll_type: pollType, results_hidden: resultsHidden })
           .select()
           .single();
         if (pollErr) throw pollErr;
@@ -87,6 +101,7 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
           poll_id: newPoll.id,
           label: opt.label,
           points: opt.points,
+          image_url: opt.image_url,
           team_id: opt.team_id,
           display_order: i,
         }));
@@ -134,40 +149,61 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
             <SelectItem key="ranked">Ranked choice</SelectItem>
           </Select>
 
-          <div className="space-y-2">
+          <Switch isSelected={resultsHidden} onValueChange={setResultsHidden}>
+            Hide live results from viewers
+          </Switch>
+
+          <div className="space-y-4">
             <label className="text-sm font-semibold">Options</label>
             {options.map((opt, idx) => (
-              <div key={idx} className="flex gap-2 items-end">
+              <div key={idx} className="flex flex-col gap-2 p-3 border border-default-200 rounded-lg">
+                <div className="flex gap-2 items-center">
+                  <Input
+                    size="sm"
+                    label="Label"
+                    placeholder="Option label"
+                    value={opt.label}
+                    onValueChange={(val) => {
+                      const updated = [...options];
+                      updated[idx].label = val;
+                      setOptions(updated);
+                    }}
+                    className="flex-1"
+                  />
+                  <Input
+                    size="sm"
+                    label="Points"
+                    type="number"
+                    placeholder="1"
+                    value={(opt.points || 1).toString()}
+                    onValueChange={(val) => {
+                      const updated = [...options];
+                      updated[idx].points = Number(val) || 1;
+                      setOptions(updated);
+                    }}
+                    className="w-24"
+                  />
+                  <Button
+                    size="sm"
+                    color="danger"
+                    variant="light"
+                    isIconOnly
+                    onPress={() => removeOption(idx)}
+                  >
+                     ✕
+                  </Button>
+                </div>
                 <Input
                   size="sm"
-                  placeholder="Option label"
-                  value={opt.label}
+                  label="Image URL (optional)"
+                  placeholder="https://..."
+                  value={opt.image_url || ''}
                   onValueChange={(val) => {
                     const updated = [...options];
-                    updated[idx].label = val;
+                    updated[idx].image_url = val;
                     setOptions(updated);
                   }}
                 />
-                <Input
-                  size="sm"
-                  type="number"
-                  placeholder="Points"
-                  value={(opt.points || 1).toString()}
-                  onValueChange={(val) => {
-                    const updated = [...options];
-                    updated[idx].points = Number(val) || 1;
-                    setOptions(updated);
-                  }}
-                  className="w-20"
-                />
-                <Button
-                  size="sm"
-                  color="danger"
-                  variant="light"
-                  onPress={() => removeOption(idx)}
-                >
-                  Remove
-                </Button>
               </div>
             ))}
             <div className="flex gap-2">

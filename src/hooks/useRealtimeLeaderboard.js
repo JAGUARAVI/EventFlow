@@ -17,7 +17,10 @@ export function useRealtimeLeaderboard(eventId, setTeams) {
         { event: '*', schema: 'public', table: 'teams', filter: `event_id=eq.${eventId}` },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setTeams((prev) => [...prev, payload.new]);
+            setTeams((prev) => {
+              if (prev.some((t) => t.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
           } else if (payload.eventType === 'UPDATE') {
             setTeams((prev) => prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t)));
           } else if (payload.eventType === 'DELETE') {

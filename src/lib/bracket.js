@@ -3,6 +3,28 @@
  */
 
 /**
+ * Generate matches for a specific round in a multi-round tournament
+ * @param {string} eventId
+ * @param {string} bracketType - 'single_elim' | 'round_robin' | 'swiss'
+ * @param {number} roundNumber - Round index (0, 1, 2, ...)
+ * @param {Array} teams - Team objects
+ * @param {Array} existingMatches - All matches from previous rounds (for Swiss/RR)
+ * @returns {Array} Match objects for this round
+ */
+export function generateMatchesForRound(eventId, bracketType, roundNumber, teams, existingMatches = []) {
+  switch (bracketType) {
+    case 'single_elim':
+      return generateSingleElimination(eventId, teams);
+    case 'round_robin':
+      return generateRoundRobin(eventId, teams);
+    case 'swiss':
+      return generateSwiss(eventId, teams, roundNumber, existingMatches);
+    default:
+      return [];
+  }
+}
+
+/**
  * Pad array to next power of 2 with null/bye values
  */
 function padToPowerOfTwo(teams) {
@@ -97,47 +119,155 @@ export function generateRoundRobin(eventId, teams) {
 }
 
 /**
- * Generate Swiss system bracket (simplified): pair teams with similar records.
- * This is a minimal implementation:
- * - Round 1: seed teams by initial ranking (leaderboard score), pair highest vs mid
- * - Subsequent rounds: would require tracking wins/losses and re-pairing
- * For now, returns Round 1 pairings only; subsequent rounds must be manually set up.
+ * Generate Swiss system bracket: pair teams with similar records.
+ * Implementation:
+ * - Round 1: seed by leaderboard score, use snake pairing (1st vs mid, 2nd vs mid+1, etc.)
+ * - Subsequent rounds: pair by record (wins), then by SOS (strength of schedule)
+ * 
+ * @param {string} eventId - Event UUID
+ * @param {Array} teams - Team objects with id and score
+ * @param {number} roundNumber - Which round to generate (0 = Round 1, 1 = Round 2, etc.)
+ * @param {Array} existingMatches - All matches completed so far (for record lookup)
+ * @returns {Array} Match objects for this round
  */
-export function generateSwiss(eventId, teams, numRounds = 3) {
+export function generateSwiss(eventId, teams, roundNumber = 0, existingMatches = []) {
   if (!teams || teams.length < 2) return [];
 
   const matches = [];
-  const teamIds = teams.map((t) => t.id);
   let position = 0;
 
-  // Simple seeding: sort by team ID (or could sort by current leaderboard score)
-  const sorted = [...teamIds].sort();
+  if (roundNumber === 0) {
+    // Round 1: seed by score, use snake seeding
+    const sorted = [...teams].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const mid = Math.ceil(sorted.length / 2);
+    const first = sorted.slice(0, mid);
+    const second = sorted.slice(mid).reverse();
 
-  // Round 1: pair 1st vs mid, 2nd vs mid+1, etc. (snake seeding)
-  const mid = Math.ceil(sorted.length / 2);
-  const first = sorted.slice(0, mid);
-  const second = sorted.slice(mid).reverse();
+    for (let i = 0; i < first.length; i++) {
+      const match = {
+        event_id: eventId,
+        bracket_type: 'swiss',
+        round: roundNumber,
+        position: position++,
+        team_a_id: first[i].id,
+        team_b_id: second[i]?.id || null,
+        next_match_id: null,
+        next_match_slot: null,
+        status: 'pending',
+      };
+      matches.push(match);
+    }
+  } else {
+    // Subsequent rounds: pair by record and strength of schedule (SOS)
+    const records = computeSwissRecords(teams, existingMatches);
+    const paired = swissRoundPairing(teams, records, existingMatches);
 
-  for (let i = 0; i < first.length; i++) {
-    const match = {
-      event_id: eventId,
-      bracket_type: 'swiss',
-      round: 0,
-      position: position++,
-      group_id: '0', // group_id = round number for Swiss
-      team_a_id: first[i],
-      team_b_id: second[i] || null,
-      next_match_id: null,
-      next_match_slot: null,
-      status: 'pending',
-    };
-    matches.push(match);
+    for (const pair of paired) {
+      const match = {
+        event_id: eventId,
+        bracket_type: 'swiss',
+        round: roundNumber,
+        position: position++,
+        team_a_id: pair.a,
+        team_b_id: pair.b,
+        next_match_id: null,
+        next_match_slot: null,
+        status: 'pending',
+      };
+      matches.push(match);
+    }
   }
 
-  // Future rounds (1, 2, ...) would be generated after Round 1 is completed and winners are known
-  // For now, coordinator manually creates them or a backend job pairs by record
-
   return matches;
+}
+
+/**
+ * Compute Swiss records (wins/losses/SOS) for each team
+ */
+function computeSwissRecords(teams, existingMatches) {
+  const records = {};
+  teams.forEach((t) => {
+    records[t.id] = { wins: 0, losses: 0, sos: 0, opponents: new Set() };
+  });
+
+  existingMatches.forEach((match) => {
+    if (!match.team_a_id || !match.team_b_id || match.status !== 'completed') return;
+
+    records[match.team_a_id].opponents.add(match.team_b_id);
+    records[match.team_b_id].opponents.add(match.team_a_id);
+
+    if (match.winner_id === match.team_a_id) {
+      records[match.team_a_id].wins += 1;
+      records[match.team_b_id].losses += 1;
+    } else if (match.winner_id === match.team_b_id) {
+      records[match.team_b_id].wins += 1;
+      records[match.team_a_id].losses += 1;
+    }
+  });
+
+  // Compute SOS (sum of opponent wins)
+  existingMatches.forEach((match) => {
+    if (!match.team_a_id || !match.team_b_id) return;
+    records[match.team_a_id].sos += records[match.team_b_id].wins;
+    records[match.team_b_id].sos += records[match.team_a_id].wins;
+  });
+
+  return records;
+}
+
+/**
+ * Swiss round pairing: match teams with same record, avoid rematches
+ */
+function swissRoundPairing(teams, records, existingMatches) {
+  const paired = [];
+  const used = new Set();
+
+  // Sort teams by (wins DESC, sos DESC)
+  const sorted = [...teams].sort((a, b) => {
+    const aWins = records[a.id].wins;
+    const bWins = records[b.id].wins;
+    if (aWins !== bWins) return bWins - aWins;
+    return records[b.id].sos - records[a.id].sos;
+  });
+
+  // Greedy pairing: match highest vs next available
+  for (let i = 0; i < sorted.length; i++) {
+    if (used.has(sorted[i].id)) continue;
+
+    const teamA = sorted[i];
+    let teamB = null;
+
+    // Find best match: same record, hasn't played yet
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (used.has(sorted[j].id)) continue;
+      if (records[teamA.id].wins !== records[sorted[j].id].wins) break; // different records
+      if (records[teamA.id].opponents.has(sorted[j].id)) continue; // already played
+      teamB = sorted[j];
+      break;
+    }
+
+    // If no same-record pairing, match with next available (different record OK)
+    if (!teamB) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (used.has(sorted[j].id)) continue;
+        if (records[teamA.id].opponents.has(sorted[j].id)) continue;
+        teamB = sorted[j];
+        break;
+      }
+    }
+
+    if (teamB) {
+      paired.push({ a: teamA.id, b: teamB.id });
+      used.add(teamA.id);
+      used.add(teamB.id);
+    } else if (!used.has(teamA.id)) {
+      // Bye
+      paired.push({ a: teamA.id, b: null });
+      used.add(teamA.id);
+    }
+  }
+
+  return paired;
 }
 
 /**

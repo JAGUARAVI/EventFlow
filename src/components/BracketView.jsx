@@ -32,7 +32,7 @@ export default function BracketView({ matches, teams, bracketType = 'single_elim
         {rounds.map((roundNum) => (
           <div key={roundNum} className="flex flex-col gap-4">
             <h3 className="text-sm font-semibold text-default-500 text-center">
-              {roundNum === 0 ? 'Final' : `Round ${roundNum}`}
+              {roundNum === 0 ? 'Final' : `Round ${rounds.length - roundNum}`}
             </h3>
             <div className="flex flex-col gap-3">
               {roundMap[roundNum].map((match) => (
@@ -72,7 +72,7 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
           teamAWon ? 'bg-success-100 font-semibold' : ''
         }`}
       >
-        <span className="text-sm">{teamA?.name || '(Bye)'}</span>
+        <span className="text-sm">{teamA?.name || '(Pending)'}</span>
         <span className="text-xs font-mono">{match.team_a_score || 0}</span>
       </div>
 
@@ -85,7 +85,7 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
           teamBWon ? 'bg-success-100 font-semibold' : ''
         }`}
       >
-        <span className="text-sm">{teamB?.name || '(Bye)'}</span>
+        <span className="text-sm">{teamB?.name || '(Pending)'}</span>
         <span className="text-xs font-mono">{match.team_b_score || 0}</span>
       </div>
 

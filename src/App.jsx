@@ -9,6 +9,7 @@ import EventForm from './routes/EventForm';
 import PublicLeaderboard from './routes/PublicLeaderboard';
 import PublicPollVote from './routes/PublicPollVote';
 import Profile from './routes/Profile';
+import AdminRoles from './routes/AdminRoles';
 import NotFound from './routes/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import RequireRole from './components/RequireRole';
@@ -56,6 +57,16 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/roles"
+              element={
+                <ProtectedRoute>
+                  <RequireRole allowedRoles={['admin']}>
+                    <AdminRoles />
+                  </RequireRole>
                 </ProtectedRoute>
               }
             />

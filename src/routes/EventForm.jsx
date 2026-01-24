@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Input, Textarea, Select, SelectItem, Button } from '@heroui/react';
+import { Input, Textarea, Select, SelectItem, Button, Checkbox } from '@heroui/react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
@@ -25,6 +25,10 @@ export default function EventForm() {
   const [description, setDescription] = useState('');
   const [types, setTypes] = useState(['points']);
   const [visibility, setVisibility] = useState('private');
+  const [bannerUrl, setBannerUrl] = useState('');
+  const [hideAnalytics, setHideAnalytics] = useState(false);
+  const [hideTimeline, setHideTimeline] = useState(false);
+  const [hideJudges, setHideJudges] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(isEdit);
   const [error, setError] = useState('');
@@ -56,6 +60,11 @@ export default function EventForm() {
         setTypes(['points']);
       }
       setVisibility(data.visibility || 'private');
+      setBannerUrl(data.banner_url || '');
+      const settings = data.settings || {};
+      setHideAnalytics(settings.hide_analytics || false);
+      setHideTimeline(settings.hide_timeline || false);
+      setHideJudges(settings.hide_judges || false);
     })();
   }, [id, isEdit, user, profile?.role, navigate]);
 
@@ -70,6 +79,12 @@ export default function EventForm() {
       type: normalizedTypes[0] || 'points',
       event_types: normalizedTypes,
       visibility,
+      banner_url: bannerUrl.trim() || null,
+      settings: {
+        hide_analytics: hideAnalytics,
+        hide_timeline: hideTimeline,
+        hide_judges: hideJudges,
+      },
       updated_at: new Date().toISOString(),
     };
 
@@ -118,6 +133,13 @@ export default function EventForm() {
           value={description}
           onValueChange={setDescription}
         />
+        <Input
+          label="Banner Image URL"
+          placeholder="https://example.com/banner.jpg (optional)"
+          value={bannerUrl}
+          onValueChange={setBannerUrl}
+          description="Add a banner image to display at the top of your event page"
+        />
         <Select
           label="Event types"
           selectionMode="multiple"
@@ -136,6 +158,18 @@ export default function EventForm() {
             <SelectItem key={o.value}>{o.label}</SelectItem>
           ))}
         </Select>
+        <div className="space-y-2">
+          <p className="text-sm text-default-500">Tab Visibility Settings (for non-managers)</p>
+          <Checkbox isSelected={hideAnalytics} onValueChange={setHideAnalytics}>
+            Hide Analytics tab from viewers
+          </Checkbox>
+          <Checkbox isSelected={hideTimeline} onValueChange={setHideTimeline}>
+            Hide Timeline tab from viewers
+          </Checkbox>
+          <Checkbox isSelected={hideJudges} onValueChange={setHideJudges}>
+            Hide Judges tab from viewers
+          </Checkbox>
+        </div>
         <div className="flex gap-2">
           <Button type="submit" color="primary" isLoading={loading}>
             {isEdit ? 'Save' : 'Create'}
