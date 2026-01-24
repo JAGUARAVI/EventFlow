@@ -14,26 +14,26 @@ export function useEventTheme(eventId, canManage) {
     if (!eventId) return;
 
     let active = true;
+    const savedColors = {};
 
     const loadTheme = async () => {
       const { data, error } = await supabase
         .from('themes')
         .select('*')
         .eq('event_id', eventId)
-        .single();
+        .maybeSingle();  // Use maybeSingle to avoid error when no rows
 
       if (!error && data && active) {
         setEventTheme(data);
         
         // Save current colors before applying event theme
         const root = document.documentElement;
-        const saved = {};
         const colors = data.colors_json || {};
         
         Object.keys(colors).forEach((key) => {
-          saved[key] = root.style.getPropertyValue(`--color-${key}`);
+          savedColors[key] = root.style.getPropertyValue(`--color-${key}`);
         });
-        setPreviousColors(saved);
+        setPreviousColors(savedColors);
 
         // Apply event theme colors
         Object.entries(colors).forEach(([key, value]) => {
@@ -48,9 +48,9 @@ export function useEventTheme(eventId, canManage) {
       active = false;
       
       // Restore previous colors when leaving event
-      if (Object.keys(previousColors).length > 0) {
+      if (Object.keys(savedColors).length > 0) {
         const root = document.documentElement;
-        Object.entries(previousColors).forEach(([key, value]) => {
+        Object.entries(savedColors).forEach(([key, value]) => {
           if (value) {
             root.style.setProperty(`--color-${key}`, value);
           } else {

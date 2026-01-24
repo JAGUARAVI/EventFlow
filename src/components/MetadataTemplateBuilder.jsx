@@ -16,6 +16,7 @@ import {
 } from '@heroui/react';
 import { Plus, Trash2, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Text' },
@@ -28,6 +29,7 @@ const FIELD_TYPES = [
 ];
 
 export default function MetadataTemplateBuilder({ eventId, initialTemplate, onSave }) {
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [fields, setFields] = useState(initialTemplate?.fields_json || []);
   const [newField, setNewField] = useState({ name: '', type: 'text', required: false });
@@ -108,12 +110,15 @@ export default function MetadataTemplateBuilder({ eventId, initialTemplate, onSa
           .insert({
             event_id: eventId,
             fields_json: fields,
+            created_by: user?.id,
           });
 
         if (error) throw error;
       }
 
-      onSave(fields);
+      if (onSave) {
+        onSave(fields);
+      }
       setIsOpen(false);
     } catch (err) {
       console.error('Failed to save template:', err);

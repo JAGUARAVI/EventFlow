@@ -23,6 +23,8 @@ import ThemeBuilder from '../components/ThemeBuilder';
 import EventStatusManager from '../components/EventStatusManager';
 import EventAnalytics from '../components/EventAnalytics';
 import MetadataTemplateBuilder from '../components/MetadataTemplateBuilder';
+import MetadataFieldsForm from '../components/MetadataFieldsForm';
+import TeamMetadataDisplay from '../components/TeamMetadataDisplay';
 import PdfExportDialog from '../components/PdfExportDialog';
 import { generateSingleElimination, generateRoundRobin, generateSwiss } from '../lib/bracket';
 import { useLiveVotes } from '../hooks/useLiveVotes';
@@ -56,8 +58,10 @@ export default function EventPage() {
 
   const { isOpen: isTeamOpen, onOpen: onTeamOpen, onClose: onTeamClose } = useDisclosure();
   const [teamName, setTeamName] = useState('');
+  const [teamMetadata, setTeamMetadata] = useState({});
   const [teamSaving, setTeamSaving] = useState(false);
   const [editingTeam, setEditingTeam] = useState(null);
+  const [changingRegistrationStatus, setChangingRegistrationStatus] = useState(false);
 
   const { isOpen: isJudgeOpen, onOpen: onJudgeOpen, onClose: onJudgeClose } = useDisclosure();
   const [judgeQuery, setJudgeQuery] = useState('');
@@ -86,6 +90,8 @@ export default function EventPage() {
   const hasType = (t) => eventTypes.includes(t);
   const canManage = event && (isAdmin || (event.created_by === user?.id && role !== 'viewer'));
   const canJudge = event && (canManage || (judges.some((j) => j.user_id === user?.id)));
+  const registrationsOpen = event?.status === 'registration_open';
+  const isTeamRegistered = teams.some((t) => t.created_by === user?.id);
   const settings = event?.settings || {};
   const showAnalytics = canManage || !settings.hide_analytics;
   const showTimeline = canManage || !settings.hide_timeline;
@@ -376,12 +382,14 @@ export default function EventPage() {
   const openAddTeam = () => {
     setEditingTeam(null);
     setTeamName('');
+    setTeamMetadata({});
     onTeamOpen();
   };
 
   const openEditTeam = (t) => {
     setEditingTeam(t);
     setTeamName(t.name);
+    setTeamMetadata(t.metadata_values || {});
     onTeamOpen();
   };
 
@@ -390,14 +398,19 @@ export default function EventPage() {
     if (!name) return;
     setTeamSaving(true);
     if (editingTeam) {
-      const { error: e } = await supabase.from('teams').update({ name }).eq('id', editingTeam.id);
+      const { error: e } = await supabase
+        .from('teams')
+        .update({ name, metadata_values: teamMetadata })
+        .eq('id', editingTeam.id);
       setTeamSaving(false);
       if (e) {
         setError(e.message);
         return;
       }
     } else {
-      const { error: e } = await supabase.from('teams').insert([{ event_id: id, name }]);
+      const { error: e } = await supabase
+        .from('teams')
+        .insert([{ event_id: id, name, metadata_values: teamMetadata, created_by: user?.id }]);
       setTeamSaving(false);
       if (e) {
         setError(e.message);
@@ -413,6 +426,21 @@ export default function EventPage() {
     const { error: e } = await supabase.from('teams').delete().eq('id', teamId);
     if (e) setError(e.message);
     else fetch();
+  };
+
+  const updateRegistrationStatus = async (newStatus) => {
+    setChangingRegistrationStatus(true);
+    const { error } = await supabase
+      .from('events')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    setChangingRegistrationStatus(false);
+    if (error) {
+      addToast({ title: 'Failed to update registration status', description: error.message, severity: 'danger' });
+    } else {
+      fetch();
+      addToast({ title: `Registrations ${newStatus === 'registration_open' ? 'opened' : 'closed'}`, severity: 'success' });
+    }
   };
 
   const openAddJudge = () => {
@@ -598,6 +626,16 @@ export default function EventPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
+      {event?.banner_url && (
+        <div className="mb-6 rounded-lg overflow-hidden">
+          <img
+            src={event.banner_url}
+            alt="Event banner"
+            className="w-full h-48 object-cover"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+        </div>
+      )}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-bold">{event?.name}</h1>
@@ -625,8 +663,7 @@ export default function EventPage() {
               <PdfExportDialog
                 isOpen={isPdfExportOpen}
                 onClose={onPdfExportClose}
-                eventId={id}
-                eventName={event?.name}
+                event={event}
                 teams={teams}
                 matches={matches}
                 polls={polls}
@@ -640,9 +677,9 @@ export default function EventPage() {
               </Button>
               <EventCloneDialog
                 isOpen={isCloneOpen}
-                onClose={onCloneClose}
-                eventId={id}
-                eventName={event?.name}
+                onOpenChange={onCloneClose}
+                event={event}
+                onCloneSuccess={(newEventId) => navigate(`/events/${newEventId}`)}
               />
             </>
           )}
@@ -700,14 +737,56 @@ export default function EventPage() {
 
       <Tabs aria-label="Event sections">
         <Tab key="details" title="Details">
-          <div className="pt-4 space-y-2">
-            <p><span className="text-default-500">Description:</span> {event?.description || '—'}</p>
-            <p><span className="text-default-500">Type:</span> {event?.type}</p>
-            <p><span className="text-default-500">Visibility:</span> {event?.visibility}</p>
+          <div className="pt-4 space-y-4">
+            <div className="space-y-2">
+              <p><span className="text-default-500">Description:</span> {event?.description || '—'}</p>
+              <p><span className="text-default-500">Type:</span> {event?.type}</p>
+              <p><span className="text-default-500">Visibility:</span> {event?.visibility}</p>
+              <p>
+                <span className="text-default-500">Registration Status:</span>
+                <Chip className="ml-2" color={registrationsOpen ? 'success' : 'default'} variant="flat">
+                  {event?.status === 'registration_open' ? 'Open' : 'Closed'}
+                </Chip>
+              </p>
+            </div>
+            {canManage && (
+              <div className="flex gap-2">
+                {!registrationsOpen ? (
+                  <Button
+                    size="sm"
+                    color="primary"
+                    onPress={() => updateRegistrationStatus('registration_open')}
+                    isLoading={changingRegistrationStatus}
+                  >
+                    Open Registrations
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    color="warning"
+                    variant="flat"
+                    onPress={() => updateRegistrationStatus('registration_closed')}
+                    isLoading={changingRegistrationStatus}
+                  >
+                    Close Registrations
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </Tab>
         <Tab key="teams" title="Teams">
           <div className="pt-4 space-y-6">
+            {registrationsOpen && !canManage && !isTeamRegistered && (
+              <Button
+                color="primary"
+                size="lg"
+                onPress={openAddTeam}
+                className="w-full"
+              >
+                Register Your Team
+              </Button>
+            )}
             {canManage && (
               <div className="space-y-4">
                 <div>
@@ -722,14 +801,46 @@ export default function EventPage() {
               </div>
             )}
             {!canManage && (
-              <Button size="sm" color="primary" className="mb-3" onPress={openAddTeam}>
-                Add team
+              <Button size="sm" color="primary" className="mb-3" onPress={openAddTeam} isDisabled={!registrationsOpen}>
+                {registrationsOpen ? 'Register Team' : 'Registrations Closed'}
               </Button>
             )}
-            <Table aria-label="Teams">
-              <TableHeader>{teamColumns}</TableHeader>
-              <TableBody>{teamRows}</TableBody>
-            </Table>
+            <div className="space-y-2">
+              {teams.length === 0 ? (
+                <p className="text-default-500 text-sm">No teams yet.</p>
+              ) : (
+                teams.map((t) => (
+                  <Card key={t.id} isBlurred>
+                    <CardBody className="gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="font-semibold text-lg">{t.name}</p>
+                          {t.description && (
+                            <p className="text-sm text-default-500 mt-1">{t.description}</p>
+                          )}
+                        </div>
+                        {canManage && (
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="light" onPress={() => openEditTeam(t)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              color="danger"
+                              variant="light"
+                              onPress={() => removeTeam(t.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      <TeamMetadataDisplay eventId={id} teamMetadata={t.metadata_values || {}} />
+                    </CardBody>
+                  </Card>
+                ))
+              )}
+            </div>
           </div>
         </Tab>
         {hasType('bracket') && (
@@ -992,8 +1103,18 @@ export default function EventPage() {
       <Modal isOpen={isTeamOpen} onClose={onTeamClose}>
         <ModalContent>
           <ModalHeader>{editingTeam ? 'Edit team' : 'Add team'}</ModalHeader>
-          <ModalBody>
-            <Input label="Name" value={teamName} onValueChange={setTeamName} placeholder="Team name" />
+          <ModalBody className="space-y-4">
+            <Input
+              label="Name"
+              value={teamName}
+              onValueChange={setTeamName}
+              placeholder="Team name"
+            />
+            <MetadataFieldsForm
+              eventId={id}
+              teamMetadata={teamMetadata}
+              onMetadataChange={setTeamMetadata}
+            />
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={onTeamClose}>Cancel</Button>

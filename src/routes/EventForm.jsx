@@ -25,6 +25,7 @@ export default function EventForm() {
   const [description, setDescription] = useState('');
   const [types, setTypes] = useState(['points']);
   const [visibility, setVisibility] = useState('private');
+  const [bannerUrl, setBannerUrl] = useState('');
   const [hideAnalytics, setHideAnalytics] = useState(false);
   const [hideTimeline, setHideTimeline] = useState(false);
   const [hideJudges, setHideJudges] = useState(false);
@@ -59,6 +60,7 @@ export default function EventForm() {
         setTypes(['points']);
       }
       setVisibility(data.visibility || 'private');
+      setBannerUrl(data.banner_url || '');
       const settings = data.settings || {};
       setHideAnalytics(settings.hide_analytics || false);
       setHideTimeline(settings.hide_timeline || false);
@@ -77,6 +79,7 @@ export default function EventForm() {
       type: normalizedTypes[0] || 'points',
       event_types: normalizedTypes,
       visibility,
+      banner_url: bannerUrl.trim() || null,
       settings: {
         hide_analytics: hideAnalytics,
         hide_timeline: hideTimeline,
@@ -129,6 +132,13 @@ export default function EventForm() {
           placeholder="Optional description"
           value={description}
           onValueChange={setDescription}
+        />
+        <Input
+          label="Banner Image URL"
+          placeholder="https://example.com/banner.jpg (optional)"
+          value={bannerUrl}
+          onValueChange={setBannerUrl}
+          description="Add a banner image to display at the top of your event page"
         />
         <Select
           label="Event types"

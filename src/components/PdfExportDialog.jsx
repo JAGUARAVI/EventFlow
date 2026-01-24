@@ -20,7 +20,7 @@ import {
   savePDF,
 } from '../lib/pdfExport';
 
-export default function PdfExportDialog({ event, teams, matches, polls, votes, isOpen, onOpenChange }) {
+export default function PdfExportDialog({ event, teams, matches, polls, votes, isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [exports, setExports] = useState({
     leaderboard: true,
@@ -30,6 +30,11 @@ export default function PdfExportDialog({ event, teams, matches, polls, votes, i
   });
 
   const handleExport = async () => {
+    if (!event) {
+      alert('Event data is not loaded yet');
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -58,7 +63,7 @@ export default function PdfExportDialog({ event, teams, matches, polls, votes, i
         savePDF(doc, `summary_${event.id}.pdf`);
       }
 
-      onOpenChange(false);
+      if (onClose) onClose();
     } catch (err) {
       console.error('PDF export failed:', err);
       alert('Failed to export PDF: ' + err.message);
@@ -68,7 +73,7 @@ export default function PdfExportDialog({ event, teams, matches, polls, votes, i
   };
 
   return (
-    <Modal isOpen={isOpen} onOpenChange={onOpenChange} size="md">
+    <Modal isOpen={isOpen} onOpenChange={onClose} size="md">
       <ModalContent>
         <ModalHeader>Export to PDF</ModalHeader>
 

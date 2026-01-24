@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Button,
   Card,
@@ -13,6 +13,13 @@ export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSa
   const { colors, updateColors, resetColors, defaultColors } = useTheme();
   const [tempColors, setTempColors] = useState(initialColors || colors);
 
+  // Update tempColors when initialColors changes (for event themes)
+  useEffect(() => {
+    if (initialColors) {
+      setTempColors(initialColors);
+    }
+  }, [initialColors]);
+
   const handleColorChange = (key, value) => {
     setTempColors({ ...tempColors, [key]: value });
   };
@@ -21,6 +28,7 @@ export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSa
     if (onSave) {
       // Event-specific theme save
       onSave(tempColors);
+      updateColors(tempColors); // Also update global theme to reflect changes
     } else {
       // Global theme save
       updateColors(tempColors);
@@ -30,11 +38,13 @@ export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSa
 
   const handleCancel = () => {
     setTempColors(colors);
+    updateColors(colors); // Also update global theme to reflect changes
     if (onOpenChange) onOpenChange(false);
   };
 
   const handleReset = () => {
     setTempColors(defaultColors);
+    updateColors(defaultColors); // Also update global theme to reflect changes
   };
 
   const colorLabels = {
@@ -49,7 +59,7 @@ export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSa
   return (
     <div className="space-y-4">
       <p className="text-sm text-default-600">
-        Customize your event colors. Changes are saved locally.
+        {onSave ? 'Customize event colors. Changes will be visible to all viewers.' : 'Customize your theme colors. Changes are saved locally.'}
       </p>
 
       <Divider />

@@ -78,7 +78,9 @@ ALTER TABLE themes ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "themes_view_own" ON themes
   FOR SELECT USING (
-    user_id = auth.uid() OR is_admin()
+    user_id = auth.uid() 
+    OR is_admin()
+    OR event_id IS NOT NULL  -- Allow viewing event themes
   );
 
 CREATE POLICY "themes_manage_own" ON themes
@@ -87,6 +89,24 @@ CREATE POLICY "themes_manage_own" ON themes
   )
   WITH CHECK (
     user_id = auth.uid() OR is_admin()
+  );
+
+CREATE POLICY "themes_manage_event" ON themes
+  FOR ALL USING (
+    event_id IS NOT NULL
+    AND EXISTS(
+      SELECT 1 FROM events
+      WHERE events.id = themes.event_id
+      AND (events.created_by = auth.uid() OR is_admin())
+    )
+  )
+  WITH CHECK (
+    event_id IS NOT NULL
+    AND EXISTS(
+      SELECT 1 FROM events
+      WHERE events.id = themes.event_id
+      AND (events.created_by = auth.uid() OR is_admin())
+    )
   );
 
 -- 9. RLS Policies for custom_roles
