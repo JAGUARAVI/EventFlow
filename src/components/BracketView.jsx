@@ -1,5 +1,6 @@
-import { Button } from '@heroui/react';
+import { Button, Card, CardBody, Chip } from '@heroui/react';
 import { motion } from 'framer-motion';
+import { Trophy, Clock, PlayCircle, CheckCircle2 } from 'lucide-react';
 
 /**
  * BracketView: Visualizes bracket matches in columns (one per round).
@@ -28,13 +29,13 @@ export default function BracketView({ matches, teams, bracketType = 'single_elim
 
   return (
     <div className="overflow-x-auto pb-4">
-      <div className="flex gap-8 p-4 min-w-max">
-        {rounds.map((roundNum) => (
-          <div key={roundNum} className="flex flex-col gap-4">
-            <h3 className="text-sm font-semibold text-default-500 text-center">
-              {roundNum === 0 ? 'Final' : `Round ${rounds.length - roundNum}`}
+      <div className="flex gap-16 p-4 min-w-max items-center">
+        {rounds.map((roundNum, idx) => (
+          <div key={roundNum} className="flex flex-col gap-8 relative">
+            <h3 className="text-sm font-bold text-default-400 uppercase tracking-widest text-center">
+              {roundNum === 0 ? 'Grand Final' : roundNum === 1 ? 'Semifinals' : roundNum === 2 ? 'Quarterfinals' : `Round ${rounds.length - roundNum}`}
             </h3>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col justify-around h-full gap-6">
               {roundMap[roundNum].map((match) => (
                 <SingleElimMatchCard
                   key={match.id}
@@ -63,47 +64,81 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
   return (
     <motion.div
       layout
-      className={`border border-default-200 rounded-lg p-3 min-w-[220px] bg-default-50 transition ${canClick ? 'cursor-pointer hover:bg-default-100' : ''}`}
+      whileHover={{ scale: 1.02 }}
+      className={`
+        relative w-64 rounded-xl border-2 transition-all overflow-hidden
+        ${isCompleted 
+          ? 'border-default-200 bg-content1/50' 
+          : match.status === 'live'
+            ? 'border-primary shadow-lg shadow-primary/20 bg-content1'
+            : 'border-default-100 bg-content2/30'
+        }
+        ${canClick ? 'cursor-pointer hover:border-primary/50' : ''}
+      `}
       onClick={canClick ? onEdit : undefined}
     >
-      {/* Team A */}
-      <div
-        className={`flex justify-between items-center py-1 px-2 rounded ${
-          teamAWon ? 'bg-success-100 font-semibold' : ''
-        }`}
-      >
-        <span className="text-sm">{teamA?.name || '(Pending)'}</span>
-        <span className="text-xs font-mono">{match.team_a_score || 0}</span>
-      </div>
-
-      {/* VS */}
-      <div className="text-center text-xs text-default-400 py-1">vs</div>
-
-      {/* Team B */}
-      <div
-        className={`flex justify-between items-center py-1 px-2 rounded ${
-          teamBWon ? 'bg-success-100 font-semibold' : ''
-        }`}
-      >
-        <span className="text-sm">{teamB?.name || '(Pending)'}</span>
-        <span className="text-xs font-mono">{match.team_b_score || 0}</span>
-      </div>
-
-      {/* Status */}
-      <div className="text-xs text-default-400 text-center pt-2">
-        {isCompleted ? '✓ Done' : match.status === 'live' ? '◉ Live' : 'Pending'}
-      </div>
-
-      {canEdit && (
-        <div className="mt-2 pt-2 border-t border-default-200">
-          <Button size="xs" variant="flat" fullWidth onClick={(e) => {
-            e.stopPropagation();
-            onEdit?.();
-          }}>
-            Edit
-          </Button>
+      <div className="flex flex-col divide-y divide-default-100">
+        {/* Team A */}
+        <div className={`
+          flex justify-between items-center p-3 transition-colors
+          ${teamAWon ? 'bg-success/10' : ''}
+          ${isCompleted && !teamAWon ? 'opacity-50' : ''}
+        `}>
+          <div className="flex items-center gap-2 overflow-hidden">
+            {teamAWon && <Trophy size={14} className="text-warning shrink-0" />}
+            <span className={`text-sm truncate ${teamAWon ? 'font-bold text-foreground' : 'font-medium text-default-700'}`}>
+              {teamA?.name || <span className="text-default-300 italic">TBD</span>}
+            </span>
+          </div>
+          <span className={`text-sm font-mono font-bold ${teamAWon ? 'text-success' : 'text-default-400'}`}>
+            {match.team_a_score ?? '-'}
+          </span>
         </div>
-      )}
+
+        {/* Team B */}
+        <div className={`
+          flex justify-between items-center p-3 transition-colors
+          ${teamBWon ? 'bg-success/10' : ''}
+          ${isCompleted && !teamBWon ? 'opacity-50' : ''}
+        `}>
+          <div className="flex items-center gap-2 overflow-hidden">
+            {teamBWon && <Trophy size={14} className="text-warning shrink-0" />}
+            <span className={`text-sm truncate ${teamBWon ? 'font-bold text-foreground' : 'font-medium text-default-700'}`}>
+              {teamB?.name || <span className="text-default-300 italic">TBD</span>}
+            </span>
+          </div>
+          <span className={`text-sm font-mono font-bold ${teamBWon ? 'text-success' : 'text-default-400'}`}>
+            {match.team_b_score ?? '-'}
+          </span>
+        </div>
+      </div>
+
+      {/* Status Bar */}
+      <div className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider flex justify-between items-center
+        ${isCompleted ? 'bg-default-100 text-default-500' : match.status === 'live' ? 'bg-primary/10 text-primary' : 'bg-default-50 text-default-400'}
+      `}>
+        <div className="flex items-center gap-1">
+          {isCompleted ? (
+            <>
+              <CheckCircle2 size={10} /> Finished
+            </>
+          ) : match.status === 'live' ? (
+            <>
+              <PlayCircle size={10} /> Live
+            </>
+          ) : (
+            <>
+              <Clock size={10} /> Pending
+            </>
+          )}
+        </div>
+        
+        {canEdit && (
+          <span className="text-[9px] bg-default-200 px-1.5 py-0.5 rounded text-default-600">
+            Edit
+          </span>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -113,7 +148,7 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
  */
 function BracketViewList({ matches, teams, canEdit, onEditMatch }) {
   return (
-    <div className="space-y-2">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       {matches.map((match) => {
         const teamA = teams.find((t) => t.id === match.team_a_id);
         const teamB = teams.find((t) => t.id === match.team_b_id);
@@ -126,28 +161,24 @@ function BracketViewList({ matches, teams, canEdit, onEditMatch }) {
           <motion.div
             key={match.id}
             layout
-            className={`border border-default-200 rounded-lg p-3 bg-default-50 flex items-center justify-between transition ${canClick ? 'cursor-pointer hover:bg-default-100' : ''}`}
+            whileHover={{ scale: 1.01 }}
+            className={`
+              border rounded-xl p-0 overflow-hidden bg-content1
+              ${isCompleted ? 'border-default-200' : match.status === 'live' ? 'border-primary shadow-md' : 'border-default-100'}
+              ${canClick ? 'cursor-pointer hover:border-primary/50' : ''}
+            `}
             onClick={canClick ? () => onEditMatch?.(match) : undefined}
           >
-            <div className="flex-1">
-              <div className={`text-sm ${teamAWon ? 'font-semibold text-success' : ''}`}>
-                {teamA?.name} {match.team_a_score || 0}
+            <div className="flex flex-col divide-y divide-default-100">
+              <div className={`flex justify-between p-3 ${teamAWon ? 'bg-success/5 font-bold' : ''}`}>
+               <span className="text-sm truncate">{teamA?.name || 'TBD'}</span>
+               <span className="font-mono text-sm">{match.team_a_score ?? '-'}</span>
               </div>
-              <div className={`text-sm ${teamBWon ? 'font-semibold text-success' : ''}`}>
-                {teamB?.name} {match.team_b_score || 0}
+              <div className={`flex justify-between p-3 ${teamBWon ? 'bg-success/5 font-bold' : ''}`}>
+               <span className="text-sm truncate">{teamB?.name || 'TBD'}</span>
+               <span className="font-mono text-sm">{match.team_b_score ?? '-'}</span>
               </div>
             </div>
-            <div className="text-xs text-default-400 ml-4">
-              {isCompleted ? '✓' : match.status === 'live' ? '◉' : '-'}
-            </div>
-            {canEdit && (
-              <Button size="xs" variant="light" onClick={(e) => {
-                e.stopPropagation();
-                onEditMatch?.(match);
-              }}>
-                Edit
-              </Button>
-            )}
           </motion.div>
         );
       })}

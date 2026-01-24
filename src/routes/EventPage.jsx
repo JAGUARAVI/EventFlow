@@ -610,6 +610,14 @@ export default function EventPage() {
             );
         }
 
+        // Create a set of slots that are fed by previous matches
+        const slotsFed = new Set();
+        // Since we might have just updated links, we should rely on the calculated logic or fetch again if complex.
+        // But for simplicity/speed, let's use the local 'allMatches' plus the 'linkUpdates' logic imagination
+        // Actually, fetching 'current' inside the loop is safer as it gets the latest state including links if they were saved? 
+        // No, the link updates above are async awaited. So the DB is consistent.
+        // We will fetch fresh data inside the loop.
+
         // Auto-advance byes until no more single-team matches
         for (let i = 0; i < 6; i++) {
             const { data: current } = await supabase
@@ -619,15 +627,32 @@ export default function EventPage() {
                 .eq("bracket_type", "single_elim");
 
             if (!current || current.length === 0) break;
+            
+            // Build the set of fed slots from the CURRENT state of matches
+            const currentFedInfo = new Set();
+            current.forEach(m => {
+                if (m.next_match_id) {
+                    currentFedInfo.add(`${m.next_match_id}_${m.next_match_slot || 'a'}`);
+                }
+            });
 
             const byeMatches = current.filter((m) => {
                 const hasA = !!m.team_a_id;
                 const hasB = !!m.team_b_id;
-                return (
-                    !m.winner_id &&
-                    m.status !== "completed" &&
-                    ((hasA && !hasB) || (!hasA && hasB))
-                );
+                
+                if (m.winner_id || m.status === 'completed') return false;
+                if (hasA && hasB) return false; // Both present = normal match
+                if (!hasA && !hasB) return false; // Both missing = waiting
+
+                // One is present, one is missing. 
+                // Is the missing one pending a previous match?
+                const fedA = currentFedInfo.has(`${m.id}_a`);
+                const fedB = currentFedInfo.has(`${m.id}_b`);
+
+                if (hasA && !hasB && !fedB) return true; // Yes, B is missing and NOT fed -> Bye
+                if (!hasA && hasB && !fedA) return true; // Yes, A is missing and NOT fed -> Bye
+
+                return false; // Otherwise it's pending
             });
 
             if (byeMatches.length === 0) break;
@@ -1229,61 +1254,7 @@ export default function EventPage() {
                     </div>
                 )}
 
-                {/* Statistics Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
-                        <CardBody className="p-4 flex flex-col items-center gap-2">
-                            <div className="p-3 rounded-lg bg-primary/10 text-primary mb-1">
-                                <Users size={24} />
-                            </div>
-                            <p className="text-default-500 text-xs uppercase font-bold tracking-wider text-center">
-                                Teams
-                            </p>
-                            <p className="text-2xl font-bold text-center">
-                                {teams.length}
-                            </p>
-                        </CardBody>
-                    </Card>
-                    <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
-                        <CardBody className="p-4 flex flex-col items-center gap-2">
-                            <div className="p-3 rounded-lg bg-secondary/10 text-secondary mb-1">
-                                <Gavel size={24} />
-                            </div>
-                            <p className="text-default-500 text-xs uppercase font-bold tracking-wider text-center">
-                                Judges
-                            </p>
-                            <p className="text-2xl font-bold text-center">
-                                {judges.length}
-                            </p>
-                        </CardBody>
-                    </Card>
-                    <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
-                        <CardBody className="p-4 flex flex-col items-center gap-2">
-                            <div className="p-3 rounded-lg bg-warning/10 text-warning mb-1">
-                                <Trophy size={24} />
-                            </div>
-                            <p className="text-default-500 text-xs uppercase font-bold tracking-wider text-center">
-                                Matches
-                            </p>
-                            <p className="text-2xl font-bold text-center">
-                                {matches.length}
-                            </p>
-                        </CardBody>
-                    </Card>
-                    <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
-                        <CardBody className="p-4 flex flex-col items-center gap-2">
-                            <div className="p-3 rounded-lg bg-success/10 text-success mb-1">
-                                <BarChart2 size={24} />
-                            </div>
-                            <p className="text-default-500 text-xs uppercase font-bold tracking-wider text-center">
-                                Polls
-                            </p>
-                            <p className="text-2xl font-bold text-center">
-                                {polls.length}
-                            </p>
-                        </CardBody>
-                    </Card>
-                </div>
+
 
                 <Card className="border-none shadow-lg bg-background/60 backdrop-blur-lg">
                     <CardBody className="p-0">
@@ -1306,6 +1277,53 @@ export default function EventPage() {
                         >
                             <Tab key="details" title="Details" className="p-6">
                                 <div className="space-y-6">
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
+                                            <CardBody className="p-4 flex flex-row items-center gap-4">
+                                                <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                                                    <Users size={20} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-default-500 text-xs font-bold uppercase tracking-wider">Teams</p>
+                                                    <p className="text-xl font-bold">{teams.length}</p>
+                                                </div>
+                                            </CardBody>
+                                        </Card>
+                                        <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
+                                            <CardBody className="p-4 flex flex-row items-center gap-4">
+                                                <div className="p-2 rounded-lg bg-secondary/10 text-secondary">
+                                                    <Gavel size={20} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-default-500 text-xs font-bold uppercase tracking-wider">Judges</p>
+                                                    <p className="text-xl font-bold">{judges.length}</p>
+                                                </div>
+                                            </CardBody>
+                                        </Card>
+                                        <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
+                                            <CardBody className="p-4 flex flex-row items-center gap-4">
+                                                <div className="p-2 rounded-lg bg-warning/10 text-warning">
+                                                    <Trophy size={20} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-default-500 text-xs font-bold uppercase tracking-wider">Matches</p>
+                                                    <p className="text-xl font-bold">{matches.length}</p>
+                                                </div>
+                                            </CardBody>
+                                        </Card>
+                                        <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
+                                            <CardBody className="p-4 flex flex-row items-center gap-4">
+                                                <div className="p-2 rounded-lg bg-success/10 text-success">
+                                                    <BarChart2 size={20} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-default-500 text-xs font-bold uppercase tracking-wider">Polls</p>
+                                                    <p className="text-xl font-bold">{polls.length}</p>
+                                                </div>
+                                            </CardBody>
+                                        </Card>
+                                    </div>
+                                    
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                         <div className="space-y-4">
                                             <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -1653,93 +1671,112 @@ export default function EventPage() {
                                     title="Bracket"
                                     className="p-6"
                                 >
-                                    <div className="space-y-4">
-                                        {canManage && (
-                                            <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-default-50 border border-default-100">
-                                                <Select
-                                                    label="Bracket Type"
-                                                    size="sm"
-                                                    selectedKeys={[bracketType]}
-                                                    onSelectionChange={(keys) =>
-                                                        setBracketType(
-                                                            [...keys][0] ||
-                                                                "single_elim",
-                                                        )
-                                                    }
-                                                    className="max-w-xs"
-                                                >
-                                                    <SelectItem key="single_elim">
-                                                        Single Elimination
-                                                    </SelectItem>
-                                                    <SelectItem key="round_robin">
-                                                        Round Robin
-                                                    </SelectItem>
-                                                    <SelectItem key="swiss">
-                                                        Swiss System
-                                                    </SelectItem>
-                                                </Select>
+                                    <div className="space-y-6">
+                                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                            <div>
+                                                <h3 className="text-xl font-bold flex items-center gap-2">
+                                                    <Trophy className="text-warning" size={24} /> Tournament Bracket
+                                                </h3>
+                                                <p className="text-default-500 text-sm">Follow the tournament progress and results</p>
+                                            </div>
+                                            {canManage && (
+                                                <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                                                    <Select
+                                                        aria-label="Bracket Type"
+                                                        placeholder="Bracket Type"
+                                                        size="sm"
+                                                        selectedKeys={[bracketType]}
+                                                        onSelectionChange={(keys) =>
+                                                            setBracketType(
+                                                                [...keys][0] ||
+                                                                    "single_elim",
+                                                            )
+                                                        }
+                                                        className="w-40"
+                                                        startContent={<Settings size={14} className="text-default-400" />}
+                                                    >
+                                                        <SelectItem key="single_elim">
+                                                            Single Elimination
+                                                        </SelectItem>
+                                                        <SelectItem key="round_robin">
+                                                            Round Robin
+                                                        </SelectItem>
+                                                        <SelectItem key="swiss">
+                                                            Swiss System
+                                                        </SelectItem>
+                                                    </Select>
 
+                                                    {matches.length === 0 ? (
+                                                        <Button
+                                                            size="sm"
+                                                            color="primary"
+                                                            isLoading={
+                                                                generatingBracket
+                                                            }
+                                                            onPress={
+                                                                handleGenerateBracket
+                                                            }
+                                                            startContent={
+                                                                <Activity
+                                                                    size={16}
+                                                                />
+                                                            }
+                                                        >
+                                                            Generate
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            size="sm"
+                                                            color="warning"
+                                                            variant="flat"
+                                                            isLoading={
+                                                                regeneratingBracket
+                                                            }
+                                                            onPress={
+                                                                handleRegenerateBracket
+                                                            }
+                                                            startContent={
+                                                                <RefreshCw
+                                                                    size={16}
+                                                                />
+                                                            }
+                                                        >
+                                                            Regenerate
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <Card className="border-none bg-default-50/50 shadow-none">
+                                            <CardBody className="p-0 overflow-hidden">
                                                 {matches.length === 0 ? (
-                                                    <Button
-                                                        color="primary"
-                                                        isLoading={
-                                                            generatingBracket
-                                                        }
-                                                        onPress={
-                                                            handleGenerateBracket
-                                                        }
-                                                        startContent={
-                                                            <Activity
-                                                                size={16}
+                                                    <div className="text-center py-24 text-default-400 bg-default-50 rounded-xl border border-dashed border-default-200">
+                                                        <div className="bg-default-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                                            <Trophy
+                                                                size={40}
+                                                                className="opacity-20"
                                                             />
-                                                        }
-                                                    >
-                                                        Generate New Bracket
-                                                    </Button>
+                                                        </div>
+                                                        <h4 className="text-lg font-medium text-default-600">No Bracket Generated</h4>
+                                                        <p className="text-sm">Generate a bracket to start the tournament matches.</p>
+                                                    </div>
                                                 ) : (
-                                                    <Button
-                                                        color="warning"
-                                                        variant="flat"
-                                                        isLoading={
-                                                            regeneratingBracket
-                                                        }
-                                                        onPress={
-                                                            handleRegenerateBracket
-                                                        }
-                                                        startContent={
-                                                            <RefreshCw
-                                                                size={16}
-                                                            />
-                                                        }
-                                                    >
-                                                        Regenerate Bracket
-                                                    </Button>
+                                                    <div className="overflow-x-auto p-6 pb-8 min-h-[400px]">
+                                                        <BracketView
+                                                            matches={matches}
+                                                            teams={teams}
+                                                            bracketType={
+                                                                matches[0]?.bracket_type ||
+                                                                "single_elim"
+                                                            }
+                                                            canEdit={canJudge}
+                                                            onEditMatch={handleEditMatch}
+                                                        />
+                                                    </div>
                                                 )}
-                                            </div>
-                                        )}
-
-                                        {matches.length === 0 ? (
-                                            <div className="text-center py-20 text-default-400">
-                                                <Trophy
-                                                    size={48}
-                                                    className="mx-auto mb-4 opacity-20"
-                                                />
-                                                <p>
-                                                    No tournament bracket active
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <BracketView
-                                                matches={matches}
-                                                teams={teams}
-                                                bracketType={
-                                                    matches[0]?.bracket_type ||
-                                                    "single_elim"
-                                                }
-                                                canEdit={canJudge}
-                                                onEditMatch={handleEditMatch}
-                                            />
-                                        )}
+                                            </CardBody>
+                                        </Card>
                                     </div>
                                 </Tab>
                             )}
