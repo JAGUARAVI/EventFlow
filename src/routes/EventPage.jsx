@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, Select, SelectItem, Card, CardBody, Chip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
 import { Link as HeroLink } from '@heroui/link';
 import { Download, Copy, Trash2, Settings, Share2, MoreVertical, Search, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
@@ -33,6 +33,7 @@ import { useRealtimePolls } from '../hooks/useRealtimePolls';
 export default function EventPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, profile } = useAuth();
   const [event, setEvent] = useState(null);
   const [teams, setTeams] = useState([]);
@@ -807,7 +808,11 @@ export default function EventPage() {
         </Card>
       </div>
 
-      <Tabs aria-label="Event sections">
+      <Tabs 
+        aria-label="Event sections" 
+        selectedKey={searchParams.get('tab') || 'details'} 
+        onSelectionChange={(key) => setSearchParams({ tab: key })}
+      >
         <Tab key="details" title="Details">
           <div className="pt-4 space-y-4">
             <div className="space-y-2">
@@ -847,6 +852,11 @@ export default function EventPage() {
                 )}
               </div>
             )}
+          </div>
+        </Tab>
+        <Tab key="announcements" title="Announcements">
+          <div className="pt-4">
+            <AnnouncementsFeed eventId={id} currentUserId={user?.id} canManage={canManage} />
           </div>
         </Tab>
         <Tab key="teams" title="Teams">
@@ -1195,11 +1205,7 @@ export default function EventPage() {
         </Tab>
         )}
 
-        <Tab key="announcements" title="Announcements">
-          <div className="pt-4">
-            <AnnouncementsFeed eventId={id} currentUserId={user?.id} canManage={canManage} />
-          </div>
-        </Tab>
+
 
         {showTimeline && (
         <Tab key="timeline" title="Timeline">
