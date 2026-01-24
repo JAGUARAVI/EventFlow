@@ -10,12 +10,15 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   const canCreate = profile && ['admin', 'club_coordinator'].includes(profile.role);
+  const isAdmin = profile && profile.role === 'admin';
 
   useEffect(() => {
     if (!user?.id) return;
     (async () => {
       const [created, judged] = await Promise.all([
-        supabase.from('events').select('id, name, type, visibility, created_at').eq('created_by', user.id).order('created_at', { ascending: false }),
+        isAdmin
+          ? supabase.from('events').select('id, name, type, visibility, created_at').order('created_at', { ascending: false })
+          : supabase.from('events').select('id, name, type, visibility, created_at').eq('created_by', user.id).order('created_at', { ascending: false }),
         supabase.from('event_judges').select('event_id').eq('user_id', user.id),
       ]);
       const ids = new Set((created.data || []).map((e) => e.id));
