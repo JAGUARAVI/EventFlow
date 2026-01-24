@@ -1121,6 +1121,7 @@ export default function EventPage() {
                       pollId={poll.id}
                       options={pollOptions[poll.id] || []}
                       isLive={poll.status === 'open'}
+                      pollType={poll.poll_type}
                     />
                   </div>
                 ))}
@@ -1320,7 +1321,7 @@ export default function EventPage() {
   );
 }
 
-function PollResultsLive({ pollId, options, isLive }) {
+function PollResultsLive({ pollId, options, isLive, pollType }) {
   const votes = useLiveVotes(pollId);
-  return <PollResults options={options} votes={votes} isLive={isLive} />;
+  return <PollResults options={options} votes={votes} isLive={isLive} pollType={pollType} />;
 }

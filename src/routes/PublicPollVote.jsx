@@ -127,6 +127,7 @@ export default function PublicPollVote() {
                 options={pollOptions[selectedPollId] || []}
                 votes={liveVotes}
                 isLive={true}
+                pollType={selectedPoll?.poll_type}
               />
             </CardBody>
           </Card>
