@@ -68,13 +68,34 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signInWithEmailOtp = useCallback(async (email) => {
-    const { error } = await supabase.auth.signInWithOtp({ email });
+    const { error } = await supabase.auth.signInWithOtp({ email, options: {
+      emailRedirectTo: `${window.location.origin}/login`,
+    } });
     return { error };
   }, []);
 
   const signInWithPhoneOtp = useCallback(async (phone) => {
     const { error } = await supabase.auth.signInWithOtp({ phone });
     return { error };
+  }, []);
+
+  const signInWithEmailPassword = useCallback(async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { data, error };
+  }, []);
+
+  const signUpWithEmailPassword = useCallback(async (email, password) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/login`,
+      },
+    });
+    return { data, error };
   }, []);
 
   const value = {
@@ -85,6 +106,8 @@ export function AuthProvider({ children }) {
     signInWithEmailOtp,
     signInWithPhoneOtp,
     refreshProfile: () => user?.id && fetchProfile(user.id),
+    signInWithEmailPassword,
+    signUpWithEmailPassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -95,3 +118,4 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 }
+

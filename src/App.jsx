@@ -14,7 +14,7 @@ import RequireRole from './components/RequireRole';
 export default function App() {
   return (
     <HeroUIProvider>
-      {/*<ToastProvider placement="top-right">*/}
+        <ToastProvider placement="top-right" />
         <BrowserRouter>
         <Routes>
           <Route element={<AppLayout />}>
@@ -53,7 +53,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/404" replace />} />
         </Routes>
       </BrowserRouter>
-      {/*</ToastProvider>*/}
     </HeroUIProvider>
   );
 }

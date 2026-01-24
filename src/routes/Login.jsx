@@ -10,7 +10,12 @@ export default function Login() {
   const [phoneSent, setPhoneSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signInWithEmailOtp, signInWithPhoneOtp } = useAuth();
+  const {
+    signInWithEmailOtp,
+    signInWithPhoneOtp,
+    signInWithEmailPassword,
+    signUpWithEmailPassword,
+  } = useAuth();
   const navigate = useNavigate();
 
   const onEmailSubmit = async (e) => {
@@ -39,12 +44,75 @@ export default function Login() {
     setPhoneSent(true);
   };
 
+  const [password, setPassword] = useState('');
+  const [mode, setMode] = useState('signin'); // or 'signup'
+
+  const onEmailPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    const fn =
+      mode === 'signin'
+        ? signInWithEmailPassword
+        : signUpWithEmailPassword;
+
+    const { error: err } = await fn(email.trim(), password);
+    setLoading(false);
+
+    if (err) {
+      setError(err.message);
+      return;
+    }
+
+    navigate('/');
+  };
+
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-4">
         <h1 className="text-2xl font-bold text-center">Sign in</h1>
         {error && <p className="text-danger text-sm text-center">{error}</p>}
         <Tabs aria-label="Login method" fullWidth>
+          <Tab key="password" title="Email + Password">
+            <form onSubmit={onEmailPasswordSubmit} className="flex flex-col gap-3 pt-2">
+              <Input
+                type="email"
+                label="Email"
+                placeholder="you@example.com"
+                value={email}
+                onValueChange={setEmail}
+                isRequired
+              />
+
+              <Input
+                type="password"
+                label="Password"
+                placeholder="••••••••"
+                value={password}
+                onValueChange={setPassword}
+                isRequired
+              />
+
+              <Button type="submit" color="primary" isLoading={loading} fullWidth>
+                {mode === 'signin' ? 'Sign in' : 'Create account'}
+              </Button>
+
+              <p className="text-center text-sm text-default-500">
+                {mode === 'signin' ? 'No account?' : 'Already vibing here?'}{' '}
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() =>
+                    setMode(mode === 'signin' ? 'signup' : 'signin')
+                  }
+                >
+                  {mode === 'signin' ? 'Sign up' : 'Sign in'}
+                </button>
+              </p>
+            </form>
+          </Tab>
           <Tab key="email" title="Email">
             <form onSubmit={onEmailSubmit} className="flex flex-col gap-3 pt-2">
               <Input
