@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast } from '@heroui/react';
+import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, AvatarIcon} from '@heroui/react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtimeLeaderboard } from '../hooks/useRealtimeLeaderboard';
@@ -23,8 +23,9 @@ export default function EventPage() {
   const [editingTeam, setEditingTeam] = useState(null);
 
   const { isOpen: isJudgeOpen, onOpen: onJudgeOpen, onClose: onJudgeClose } = useDisclosure();
-  const [judgeUserId, setJudgeUserId] = useState('');
+  const [judgeQuery, setJudgeQuery] = useState('');
   const [judgeSaving, setJudgeSaving] = useState(false);
+  const [judgeSearchResults, setJudgeSearchResults] = useState([]);
 
   const isAdmin = profile?.role === 'admin';
   const canManage = event && (isAdmin || event.created_by === user?.id);
@@ -39,6 +40,22 @@ export default function EventPage() {
       supabase.from('event_judges').select('user_id, created_at').eq('event_id', id),
       supabase.from('score_history').select('*, teams(name)').eq('event_id', id).order('created_at', { ascending: false }).limit(100),
     ]);
+
+    // for each judge fetch their public.profile info
+    if (jRes.data) {
+      const judgeDetails = await Promise.all(jRes.data.map(async (j) => {
+        const { data: profileData } = await supabase.from('profiles').select('display_name, avatar_url, email').eq('id', j.user_id).single();
+        return {
+          user_id: j.user_id,
+          created_at: j.created_at,
+          display_name: profileData?.display_name || null,
+          avatar_url: profileData?.avatar_url || null,
+          email: profileData?.email || null,
+        };
+      }));
+      jRes.data = judgeDetails;
+    }
+    
     setLoading(false);
     if (eRes.error) {
       setError('Event not found');
@@ -104,13 +121,34 @@ export default function EventPage() {
   };
 
   const openAddJudge = () => {
-    setJudgeUserId('');
+    setJudgeQuery('');
+    setJudgeSearchResults([]);
     onJudgeOpen();
   };
 
-  const saveJudge = async () => {
-    const uid = judgeUserId.trim();
-    if (!uid) return;
+  const searchJudges = async (query) => {
+    setJudgeQuery(query);
+
+    if (!query.trim()) {
+      setJudgeSearchResults([]);
+      return;
+    }
+
+    const q = query.trim();
+
+    const { data, error } = await supabase.rpc('search_profiles', { q });
+
+    if (error) {
+      console.error(error);
+      setJudgeSearchResults([]);
+      return;
+    }
+
+    setJudgeSearchResults(data || []);
+  };
+
+
+  const saveJudge = async (uid) => {
     setJudgeSaving(true);
     const { error: e } = await supabase.from('event_judges').insert([{ event_id: id, user_id: uid }]);
     setJudgeSaving(false);
@@ -246,7 +284,7 @@ export default function EventPage() {
         <Tab key="leaderboard" title="Leaderboard">
           <div className="pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <Link to={`/events/${id}/leaderboard`} className="text-primary text-sm underline">
+              <Link to={`/events/${id}/leaderboard`} isExternal  className="text-primary text-sm underline">
                 Big-screen view
               </Link>
               {canJudge && (
@@ -267,16 +305,50 @@ export default function EventPage() {
             )}
             <Table aria-label="Judges">
               <TableHeader>
+                <TableColumn>JUDGE</TableColumn>
                 <TableColumn>USER ID</TableColumn>
                 {canManage && <TableColumn align="end">ACTIONS</TableColumn>}
               </TableHeader>
               <TableBody>
                 {judges.map((j) => (
                   <TableRow key={j.user_id}>
-                    <TableCell><code className="text-sm">{j.user_id}</code></TableCell>
+                    {/* 👤 Profile cell */}
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          src={j.avatar_url || undefined}
+                          name={j.display_name}
+                          size="sm"
+                        />
+                        <div className="flex flex-col">
+                          <span className="font-medium leading-tight">
+                            {j.display_name || "Unnamed Judge"}
+                          </span>
+                          <span className="text-xs text-foreground-500">
+                            {j.email}
+                          </span>
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    {/* 🆔 UUID */}
+                    <TableCell>
+                      <code className="text-xs text-foreground-500">
+                        {j.user_id}
+                      </code>
+                    </TableCell>
+
+                    {/* 🧨 Actions */}
                     {canManage && (
                       <TableCell align="right">
-                        <Button size="sm" color="danger" variant="light" onPress={() => removeJudge(j.user_id)}>Remove</Button>
+                        <Button
+                          size="sm"
+                          color="danger"
+                          variant="light"
+                          onPress={() => removeJudge(j.user_id)}
+                        >
+                          Remove
+                        </Button>
                       </TableCell>
                     )}
                   </TableRow>
@@ -305,23 +377,39 @@ export default function EventPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isJudgeOpen} onClose={onJudgeClose}>
+      <Modal isOpen={isJudgeOpen} onClose={onJudgeClose} size="md">
         <ModalContent>
           <ModalHeader>Add judge</ModalHeader>
-          <ModalBody>
+          <ModalBody className="space-y-3">
             <Input
-              label="User ID (UUID)"
-              value={judgeUserId}
-              onValueChange={setJudgeUserId}
-              placeholder="uuid from profiles"
+              label="Search by name or ID"
+              placeholder="Type name or user ID..."
+              value={judgeQuery}
+              onValueChange={searchJudges}
             />
-            <p className="text-default-500 text-sm mt-1">Enter the profile ID of the user to add as judge.</p>
+            <p className="text-default-500 text-sm">Search by name or user ID</p>
+            
+            {judgeSearchResults.length > 0 && (
+              <div className="border border-default-200 rounded-lg max-h-48 overflow-y-auto">
+                {judgeSearchResults.map((result) => (
+                  <div
+                    key={result.id}
+                    className="p-2 border-b border-default-100 last:border-b-0 cursor-pointer hover:bg-default-100"
+                    onClick={() => saveJudge(result.id)}
+                  >
+                    <p className="text-sm font-semibold">{result.display_name || '(No name)'}</p>
+                    <p className="text-xs text-default-500 break-all">{result.id}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {judgeQuery && judgeSearchResults.length === 0 && (
+              <p className="text-sm text-default-500">No results found</p>
+            )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="flat" onPress={onJudgeClose}>Cancel</Button>
-            <Button color="primary" onPress={saveJudge} isLoading={judgeSaving} isDisabled={!judgeUserId.trim()}>
-              Add
-            </Button>
+            <Button variant="flat" onPress={onJudgeClose}>Close</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
