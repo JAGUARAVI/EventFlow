@@ -54,6 +54,11 @@ export default function Navbar() {
                 <DropdownItem as={Link} to="/profile">
                   Profile
                 </DropdownItem>
+                {profile?.role === 'admin' && (
+                  <DropdownItem as={Link} to="/admin/roles">
+                    Manage Roles
+                  </DropdownItem>
+                )}
                 <DropdownItem color="danger" onPress={signOut}>
                   Sign out
                 </DropdownItem>

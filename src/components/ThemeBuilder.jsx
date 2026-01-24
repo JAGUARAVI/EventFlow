@@ -9,16 +9,22 @@ import {
 import { Palette, RotateCcw } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
-export default function ThemeBuilder({ isOpen, onOpenChange }) {
+export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSave }) {
   const { colors, updateColors, resetColors, defaultColors } = useTheme();
-  const [tempColors, setTempColors] = useState(colors);
+  const [tempColors, setTempColors] = useState(initialColors || colors);
 
   const handleColorChange = (key, value) => {
     setTempColors({ ...tempColors, [key]: value });
   };
 
   const handleApply = () => {
-    updateColors(tempColors);
+    if (onSave) {
+      // Event-specific theme save
+      onSave(tempColors);
+    } else {
+      // Global theme save
+      updateColors(tempColors);
+    }
     if (onOpenChange) onOpenChange(false);
   };
 

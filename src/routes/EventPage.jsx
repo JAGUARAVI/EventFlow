@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtimeLeaderboard } from '../hooks/useRealtimeLeaderboard';
 import { useRealtimeBracket } from '../hooks/useRealtimeBracket';
+import { useEventTheme } from '../hooks/useEventTheme';
 import Leaderboard from '../components/Leaderboard';
 import AuditLog from '../components/AuditLog';
 import BracketView from '../components/BracketView';
@@ -85,6 +86,13 @@ export default function EventPage() {
   const hasType = (t) => eventTypes.includes(t);
   const canManage = event && (isAdmin || (event.created_by === user?.id && role !== 'viewer'));
   const canJudge = event && (canManage || (judges.some((j) => j.user_id === user?.id)));
+  const settings = event?.settings || {};
+  const showAnalytics = canManage || !settings.hide_analytics;
+  const showTimeline = canManage || !settings.hide_timeline;
+  const showJudges = canManage || !settings.hide_judges;
+
+  // Load and apply event-specific theme
+  const { eventTheme, updateEventTheme, hasEventTheme } = useEventTheme(id, canManage);
 
   const fetch = useCallback(async () => {
     if (!id) return;
@@ -130,6 +138,8 @@ export default function EventPage() {
     setEvent(eRes.data);
     setTeams(tRes.data || []);
     setJudges(jRes.data || []);
+    setRounds(rRes.data || []);
+    setScoreHistory(aRes.data || []);
     const scoreItems = (aRes.data || []).map((x) => ({ ...x, kind: 'score' }));
     const auditItems = (auditRes.data || []).map((x) => ({ ...x, kind: 'event' }));
     const mergedAudit = [...scoreItems, ...auditItems].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 200);
@@ -638,6 +648,11 @@ export default function EventPage() {
           )}
           <CsvManager eventId={id} teams={teams} onTeamsImported={() => fetch()} />
           {canManage && (
+            <Button size="sm" variant="flat" onPress={onThemeOpen}>
+              Customize Theme
+            </Button>
+          )}
+          {canManage && (
             <Button color="danger" variant="flat" size="sm" onPress={() => {
               setDeleteConfirmName('');
               onDeleteOpen();
@@ -692,8 +707,21 @@ export default function EventPage() {
           </div>
         </Tab>
         <Tab key="teams" title="Teams">
-          <div className="pt-4">
+          <div className="pt-4 space-y-6">
             {canManage && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Team Metadata Template</h3>
+                  <MetadataTemplateBuilder eventId={id} onUpdate={() => fetch()} />
+                </div>
+                <div className="border-t border-default-200 pt-4">
+                  <Button size="sm" color="primary" className="mb-3" onPress={openAddTeam}>
+                    Add team
+                  </Button>
+                </div>
+              </div>
+            )}
+            {!canManage && (
               <Button size="sm" color="primary" className="mb-3" onPress={openAddTeam}>
                 Add team
               </Button>
@@ -771,6 +799,7 @@ export default function EventPage() {
           </div>
         </Tab>
         )}
+        {showJudges && (
         <Tab key="judges" title="Judges">
           <div className="pt-4">
             {canManage && (
@@ -784,6 +813,7 @@ export default function EventPage() {
             </Table>
           </div>
         </Tab>
+        )}
         {hasType('poll') && (
         <Tab key="polls" title="Polls">
           <div className="pt-4">
@@ -936,24 +966,20 @@ export default function EventPage() {
           </div>
         </Tab>
 
+        {showTimeline && (
         <Tab key="timeline" title="Timeline">
           <div className="pt-4">
             <TimelineView eventId={id} rounds={rounds} matches={matches} scoreHistory={scoreHistory} />
           </div>
         </Tab>
+        )}
 
+        {showAnalytics && (
         <Tab key="analytics" title="Analytics">
           <div className="pt-4">
             <EventAnalytics eventId={id} matches={matches} polls={polls} scoreHistory={scoreHistory} />
           </div>
         </Tab>
-
-        {canManage && (
-          <Tab key="metadata" title="Team Metadata">
-            <div className="pt-4">
-              <MetadataTemplateBuilder eventId={id} onUpdate={() => fetch()} />
-            </div>
-          </Tab>
         )}
 
         {canManage && (<Tab key="audit" title="Audit log">
@@ -1073,6 +1099,29 @@ export default function EventPage() {
               Delete
             </Button>
           </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Event Theme Customization Modal */}
+      <Modal isOpen={isThemeOpen} onClose={onThemeClose} size="lg">
+        <ModalContent>
+          <ModalHeader>
+            Customize Event Theme
+            {hasEventTheme && <span className="text-sm text-default-500 ml-2">(Visible to all viewers)</span>}
+          </ModalHeader>
+          <ModalBody>
+            <p className="text-sm text-default-500 mb-4">
+              Set custom colors for this event. These colors will be visible to all viewers when they visit this event.
+            </p>
+            <ThemeBuilder
+              initialColors={eventTheme?.colors_json}
+              onSave={(colors) => {
+                updateEventTheme(colors);
+                addToast({ title: 'Event theme saved', severity: 'success' });
+                onThemeClose();
+              }}
+            />
+          </ModalBody>
         </ModalContent>
       </Modal>
     </div>
