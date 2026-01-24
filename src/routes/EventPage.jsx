@@ -639,6 +639,38 @@ export default function EventPage() {
     return <TableRow key={j.user_id}>{cells}</TableRow>;
   });
 
+  const handleImportTeams = async (importedTeams) => {
+    if (!importedTeams || importedTeams.length === 0) return;
+
+    // Add event_id and created_by to each team
+    const teamsToInsert = importedTeams.map(t => ({
+      event_id: id,
+      name: t.name,
+      score: t.score || 0,
+      description: t.description || '',
+      metadata_values: t.metadata || {},
+      created_by: user?.id
+    }));
+
+    const { error } = await supabase.from('teams').insert(teamsToInsert);
+    
+    if (error) {
+      console.error('Import error:', error);
+      throw new Error(error.message);
+    }
+    
+    await supabase.from('event_audit').insert({
+        event_id: id,
+        action: 'teams.import',
+        entity_type: 'team',
+        message: `Imported ${teamsToInsert.length} teams from CSV`,
+        created_by: user?.id,
+    });
+
+    await fetch();
+    addToast({ title: `Imported ${teamsToInsert.length} teams`, severity: 'success' });
+  };
+
   if (loading && !event) {
     return (
       <div className="p-6 flex justify-center">
@@ -716,7 +748,13 @@ export default function EventPage() {
             </>
           )}
           {canManage && (
-            <CsvManager eventId={id} teams={teams} onTeamsImported={() => fetch()} />
+            <CsvManager 
+              event={event} 
+              teams={teams} 
+              matches={matches}
+              polls={polls}
+              onImportTeams={handleImportTeams} 
+            />
           )}
           {canManage && (
             <Button size="sm" variant="flat" onPress={onThemeOpen}>
