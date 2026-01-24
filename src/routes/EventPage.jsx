@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, Select, SelectItem, Card, CardBody, Chip } from '@heroui/react';
+import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, Select, SelectItem, Card, CardBody, Chip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
 import { Link as HeroLink } from '@heroui/link';
+import { Download, Copy, Trash2, Settings, Share2, MoreVertical } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtimeLeaderboard } from '../hooks/useRealtimeLeaderboard';
@@ -13,6 +14,15 @@ import MatchEditor from '../components/MatchEditor';
 import PollEditor from '../components/PollEditor';
 import PollVote from '../components/PollVote';
 import PollResults from '../components/PollResults';
+import TimelineView from '../components/TimelineView';
+import CsvManager from '../components/CsvManager';
+import EventCloneDialog from '../components/EventCloneDialog';
+import AnnouncementsFeed from '../components/AnnouncementsFeed';
+import ThemeBuilder from '../components/ThemeBuilder';
+import EventStatusManager from '../components/EventStatusManager';
+import EventAnalytics from '../components/EventAnalytics';
+import MetadataTemplateBuilder from '../components/MetadataTemplateBuilder';
+import PdfExportDialog from '../components/PdfExportDialog';
 import { generateSingleElimination, generateRoundRobin, generateSwiss } from '../lib/bracket';
 import { useLiveVotes } from '../hooks/useLiveVotes';
 
@@ -25,6 +35,8 @@ export default function EventPage() {
   const [judges, setJudges] = useState([]);
   const [auditItems, setAuditItems] = useState([]);
   const [matches, setMatches] = useState([]);
+  const [rounds, setRounds] = useState([]);
+  const [scoreHistory, setScoreHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [bracketType, setBracketType] = useState('single_elim');
@@ -55,6 +67,12 @@ export default function EventPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [deletingEvent, setDeletingEvent] = useState(false);
 
+  // New Phase 6/7 modals
+  const { isOpen: isCloneOpen, onOpen: onCloneOpen, onClose: onCloneClose } = useDisclosure();
+  const { isOpen: isPdfExportOpen, onOpen: onPdfExportOpen, onClose: onPdfExportClose } = useDisclosure();
+  const { isOpen: isThemeOpen, onOpen: onThemeOpen, onClose: onThemeClose } = useDisclosure();
+  const { isOpen: isMetadataOpen, onOpen: onMetadataOpen, onClose: onMetadataClose } = useDisclosure();
+
   const role = profile?.role || '';
   const isAdmin = role === 'admin';
   const eventTypes = Array.isArray(event?.event_types) && event.event_types.length > 0
@@ -71,14 +89,15 @@ export default function EventPage() {
   const fetch = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes] = await Promise.all([
+    const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes, rRes] = await Promise.all([
       supabase.from('events').select('*').eq('id', id).single(),
       supabase.from('teams').select('*').eq('event_id', id).order('created_at'),
       supabase.from('event_judges').select('user_id, created_at').eq('event_id', id),
-      supabase.from('score_history').select('*, teams(name)').eq('event_id', id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('score_history').select('*, teams(name)').eq('event_id', id).order('created_at', { ascending: true }),
       supabase.from('matches').select('*').eq('event_id', id).order('round', { ascending: false }).order('position'),
       supabase.from('polls').select('*').eq('event_id', id).order('created_at', { ascending: false }),
       supabase.from('event_audit').select('*').eq('event_id', id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('rounds').select('*').eq('event_id', id).order('number'),
     ]);
 
     // for each judge fetch their public.profile info
@@ -586,7 +605,40 @@ export default function EventPage() {
             </Button>
           )}
           {canManage && (
-            <Button size="sm" color="danger" variant="flat" onPress={() => {
+            <EventStatusManager event={event} eventId={id} onStatusChange={() => fetch()} />
+          )}
+          {canManage && (
+            <>
+              <Button size="sm" variant="flat" startContent={<Download size={16} />} onPress={onPdfExportOpen}>
+                PDF Export
+              </Button>
+              <PdfExportDialog
+                isOpen={isPdfExportOpen}
+                onClose={onPdfExportClose}
+                eventId={id}
+                eventName={event?.name}
+                teams={teams}
+                matches={matches}
+                polls={polls}
+              />
+            </>
+          )}
+          {canManage && (
+            <>
+              <Button size="sm" variant="flat" startContent={<Copy size={16} />} onPress={onCloneOpen}>
+                Clone Event
+              </Button>
+              <EventCloneDialog
+                isOpen={isCloneOpen}
+                onClose={onCloneClose}
+                eventId={id}
+                eventName={event?.name}
+              />
+            </>
+          )}
+          <CsvManager eventId={id} teams={teams} onTeamsImported={() => fetch()} />
+          {canManage && (
+            <Button color="danger" variant="flat" size="sm" onPress={() => {
               setDeleteConfirmName('');
               onDeleteOpen();
             }}>
@@ -876,6 +928,32 @@ export default function EventPage() {
             )}
           </div>
         </Tab>
+        )}
+
+        <Tab key="announcements" title="Announcements">
+          <div className="pt-4">
+            <AnnouncementsFeed eventId={id} currentUserId={user?.id} canManage={canManage} />
+          </div>
+        </Tab>
+
+        <Tab key="timeline" title="Timeline">
+          <div className="pt-4">
+            <TimelineView eventId={id} rounds={rounds} matches={matches} scoreHistory={scoreHistory} />
+          </div>
+        </Tab>
+
+        <Tab key="analytics" title="Analytics">
+          <div className="pt-4">
+            <EventAnalytics eventId={id} matches={matches} polls={polls} scoreHistory={scoreHistory} />
+          </div>
+        </Tab>
+
+        {canManage && (
+          <Tab key="metadata" title="Team Metadata">
+            <div className="pt-4">
+              <MetadataTemplateBuilder eventId={id} onUpdate={() => fetch()} />
+            </div>
+          </Tab>
         )}
 
         {canManage && (<Tab key="audit" title="Audit log">
