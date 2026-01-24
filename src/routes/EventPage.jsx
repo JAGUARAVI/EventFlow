@@ -1,22 +1,45 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, AvatarIcon} from '@heroui/react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, Select, SelectItem, Card, CardBody, Chip } from '@heroui/react';
 import { Link as HeroLink } from '@heroui/link';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtimeLeaderboard } from '../hooks/useRealtimeLeaderboard';
+import { useRealtimeBracket } from '../hooks/useRealtimeBracket';
 import Leaderboard from '../components/Leaderboard';
 import AuditLog from '../components/AuditLog';
+import BracketView from '../components/BracketView';
+import MatchEditor from '../components/MatchEditor';
+import PollEditor from '../components/PollEditor';
+import PollVote from '../components/PollVote';
+import PollResults from '../components/PollResults';
+import { generateSingleElimination, generateRoundRobin, generateSwiss } from '../lib/bracket';
+import { useLiveVotes } from '../hooks/useLiveVotes';
 
 export default function EventPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [event, setEvent] = useState(null);
   const [teams, setTeams] = useState([]);
   const [judges, setJudges] = useState([]);
   const [auditItems, setAuditItems] = useState([]);
+  const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [bracketType, setBracketType] = useState('single_elim');
+  const [generatingBracket, setGeneratingBracket] = useState(false);
+  const [regeneratingBracket, setRegeneratingBracket] = useState(false);
+  const [fixingBracket, setFixingBracket] = useState(false);
+
+  const { isOpen: isMatchOpen, onOpen: onMatchOpen, onClose: onMatchClose } = useDisclosure();
+  const [selectedMatch, setSelectedMatch] = useState(null);
+
+  const [polls, setPolls] = useState([]);
+  const [pollOptions, setPollOptions] = useState({});
+  const { isOpen: isPollEditorOpen, onOpen: onPollEditorOpen, onClose: onPollEditorClose } = useDisclosure();
+  const [selectedPoll, setSelectedPoll] = useState(null);
+  const [selectedPollForVote, setSelectedPollForVote] = useState(null);
 
   const { isOpen: isTeamOpen, onOpen: onTeamOpen, onClose: onTeamClose } = useDisclosure();
   const [teamName, setTeamName] = useState('');
@@ -28,18 +51,34 @@ export default function EventPage() {
   const [judgeSaving, setJudgeSaving] = useState(false);
   const [judgeSearchResults, setJudgeSearchResults] = useState([]);
 
-  const isAdmin = profile?.role === 'admin';
-  const canManage = event && (isAdmin || event.created_by === user?.id);
+  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deletingEvent, setDeletingEvent] = useState(false);
+
+  const role = profile?.role || '';
+  const isAdmin = role === 'admin';
+  const eventTypes = Array.isArray(event?.event_types) && event.event_types.length > 0
+    ? event.event_types
+    : event?.type === 'hybrid'
+      ? ['points', 'bracket', 'poll']
+      : event?.type
+        ? [event.type]
+        : ['points'];
+  const hasType = (t) => eventTypes.includes(t);
+  const canManage = event && (isAdmin || (event.created_by === user?.id && role !== 'viewer'));
   const canJudge = event && (canManage || (judges.some((j) => j.user_id === user?.id)));
 
   const fetch = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const [eRes, tRes, jRes, aRes] = await Promise.all([
+    const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes] = await Promise.all([
       supabase.from('events').select('*').eq('id', id).single(),
       supabase.from('teams').select('*').eq('event_id', id).order('created_at'),
       supabase.from('event_judges').select('user_id, created_at').eq('event_id', id),
       supabase.from('score_history').select('*, teams(name)').eq('event_id', id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('matches').select('*').eq('event_id', id).order('round', { ascending: false }).order('position'),
+      supabase.from('polls').select('*').eq('event_id', id).order('created_at', { ascending: false }),
+      supabase.from('event_audit').select('*').eq('event_id', id).order('created_at', { ascending: false }).limit(100),
     ]);
 
     // for each judge fetch their public.profile info
@@ -64,12 +103,36 @@ export default function EventPage() {
       setTeams([]);
       setJudges([]);
       setAuditItems([]);
+      setMatches([]);
+      setPolls([]);
+      setPollOptions({});
       return;
     }
     setEvent(eRes.data);
     setTeams(tRes.data || []);
     setJudges(jRes.data || []);
-    setAuditItems(aRes.data || []);
+    const scoreItems = (aRes.data || []).map((x) => ({ ...x, kind: 'score' }));
+    const auditItems = (auditRes.data || []).map((x) => ({ ...x, kind: 'event' }));
+    const mergedAudit = [...scoreItems, ...auditItems].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 200);
+    setAuditItems(mergedAudit);
+    setMatches(mRes.data || []);
+    setPolls(pRes.data || []);
+    if (mRes.data && mRes.data.length > 0) {
+      setBracketType(mRes.data[0].bracket_type || 'single_elim');
+    }
+    
+    // Fetch options for each poll
+    if (pRes.data && pRes.data.length > 0) {
+      const optionsMap = {};
+      for (const poll of pRes.data) {
+        const { data: opts } = await supabase.from('poll_options').select('*').eq('poll_id', poll.id).order('display_order');
+        optionsMap[poll.id] = opts || [];
+      }
+      setPollOptions(optionsMap);
+    } else {
+      setPollOptions({});
+    }
+    
     setError('');
   }, [id]);
 
@@ -77,7 +140,209 @@ export default function EventPage() {
     fetch();
   }, [fetch]);
 
+  useEffect(() => {
+    if (!canManage) return;
+    if (!matches || matches.length === 0) return;
+    if (matches[0]?.bracket_type !== 'single_elim') return;
+
+    const needsLink = matches.some((m) => m.round > 0 && (!m.next_match_id || !m.next_match_slot));
+    const needsBye = matches.some((m) => {
+      const hasA = !!m.team_a_id;
+      const hasB = !!m.team_b_id;
+      return !m.winner_id && m.status !== 'completed' && ((hasA && !hasB) || (!hasA && hasB));
+    });
+
+    if ((needsLink || needsBye) && !fixingBracket) {
+      finalizeSingleElimBracket().then(() => fetch());
+    }
+  }, [canManage, matches, fixingBracket, fetch]);
+
   useRealtimeLeaderboard(id, setTeams);
+  useRealtimeBracket(id, setMatches);
+
+  const buildBracketMatches = (type) => {
+    if (type === 'single_elim') return generateSingleElimination(id, teams);
+    if (type === 'round_robin') return generateRoundRobin(id, teams);
+    if (type === 'swiss') return generateSwiss(id, teams);
+    return [];
+  };
+
+  const handleGenerateBracket = async () => {
+    if (!teams || teams.length === 0) {
+      addToast({ title: 'No teams', description: 'Add teams first', severity: 'warning' });
+      return;
+    }
+    setGeneratingBracket(true);
+    const generated = buildBracketMatches(bracketType);
+    const { error: e } = await supabase.from('matches').insert(generated);
+    setGeneratingBracket(false);
+    if (e) {
+      addToast({ title: 'Generation failed', description: e.message, severity: 'danger' });
+      return;
+    }
+    await supabase.from('event_audit').insert({
+      event_id: id,
+      action: 'bracket.generate',
+      entity_type: 'bracket',
+      message: `Generated ${bracketType.replace('_', ' ')} bracket`,
+      created_by: user?.id,
+      metadata: { bracket_type: bracketType },
+    });
+    await finalizeSingleElimBracket();
+    fetch();
+    addToast({ title: 'Bracket generated', severity: 'success' });
+  };
+
+  const handleRegenerateBracket = async () => {
+    if (!teams || teams.length === 0) {
+      addToast({ title: 'No teams', description: 'Add teams first', severity: 'warning' });
+      return;
+    }
+    if (!confirm('Regenerate bracket? This will delete all existing matches.')) return;
+    setRegeneratingBracket(true);
+    const { error: delErr } = await supabase.from('matches').delete().eq('event_id', id);
+    if (delErr) {
+      setRegeneratingBracket(false);
+      addToast({ title: 'Regenerate failed', description: delErr.message, severity: 'danger' });
+      return;
+    }
+    const generated = buildBracketMatches(bracketType);
+    const { error: insErr } = await supabase.from('matches').insert(generated);
+    setRegeneratingBracket(false);
+    if (insErr) {
+      addToast({ title: 'Regenerate failed', description: insErr.message, severity: 'danger' });
+      return;
+    }
+    await supabase.from('event_audit').insert({
+      event_id: id,
+      action: 'bracket.regenerate',
+      entity_type: 'bracket',
+      message: `Regenerated ${bracketType.replace('_', ' ')} bracket`,
+      created_by: user?.id,
+      metadata: { bracket_type: bracketType },
+    });
+    await finalizeSingleElimBracket();
+    fetch();
+    addToast({ title: 'Bracket regenerated', severity: 'success' });
+  };
+
+  const handleEditMatch = (match) => {
+    setSelectedMatch(match);
+    onMatchOpen();
+  };
+
+  const handleDeletePoll = async (pollId) => {
+    if (!confirm('Delete this poll? This will remove all its votes.')) return;
+    const target = polls.find((p) => p.id === pollId);
+    const { error: e } = await supabase.from('polls').delete().eq('id', pollId);
+    if (e) {
+      addToast({ title: 'Delete failed', description: e.message, severity: 'danger' });
+      return;
+    }
+    await supabase.from('event_audit').insert({
+      event_id: id,
+      action: 'poll.delete',
+      entity_type: 'poll',
+      entity_id: pollId,
+      message: target ? `Deleted poll "${target.question}"` : 'Deleted poll',
+      created_by: user?.id,
+    });
+    fetch();
+    addToast({ title: 'Poll deleted', severity: 'success' });
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!event?.name) return;
+    if (deleteConfirmName !== event.name) {
+      addToast({ title: 'Name mismatch', description: 'Type the event name exactly to confirm.', severity: 'warning' });
+      return;
+    }
+    setDeletingEvent(true);
+    const { error: e } = await supabase.from('events').delete().eq('id', id);
+    setDeletingEvent(false);
+    if (e) {
+      addToast({ title: 'Delete failed', description: e.message, severity: 'danger' });
+      return;
+    }
+    addToast({ title: 'Event deleted', severity: 'success' });
+    onDeleteClose();
+    navigate('/dashboard');
+  };
+
+  const finalizeSingleElimBracket = async () => {
+    if (!id || bracketType !== 'single_elim') return;
+    setFixingBracket(true);
+
+    // Fetch current matches for event
+    const { data: allMatches } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('event_id', id)
+      .eq('bracket_type', 'single_elim');
+
+    if (!allMatches || allMatches.length === 0) {
+      setFixingBracket(false);
+      return;
+    }
+
+    // Build map by round/position for next match linking
+    const map = new Map();
+    allMatches.forEach((m) => map.set(`${m.round}_${m.position}`, m));
+
+    const linkUpdates = [];
+    allMatches.forEach((m) => {
+      if (m.round > 0) {
+        const nextRound = m.round - 1;
+        const nextPos = Math.floor(m.position / 2);
+        const nextMatch = map.get(`${nextRound}_${nextPos}`);
+        const slot = m.position % 2 === 0 ? 'a' : 'b';
+        if (nextMatch && (m.next_match_id !== nextMatch.id || m.next_match_slot !== slot)) {
+          linkUpdates.push({ id: m.id, next_match_id: nextMatch.id, next_match_slot: slot });
+        }
+      }
+    });
+
+    if (linkUpdates.length > 0) {
+      await Promise.all(
+        linkUpdates.map((u) =>
+          supabase.from('matches').update({
+            next_match_id: u.next_match_id,
+            next_match_slot: u.next_match_slot,
+          }).eq('id', u.id)
+        )
+      );
+    }
+
+    // Auto-advance byes until no more single-team matches
+    for (let i = 0; i < 6; i++) {
+      const { data: current } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('event_id', id)
+        .eq('bracket_type', 'single_elim');
+
+      if (!current || current.length === 0) break;
+
+      const byeMatches = current.filter((m) => {
+        const hasA = !!m.team_a_id;
+        const hasB = !!m.team_b_id;
+        return !m.winner_id && m.status !== 'completed' && ((hasA && !hasB) || (!hasA && hasB));
+      });
+
+      if (byeMatches.length === 0) break;
+
+      await Promise.all(
+        byeMatches.map((m) =>
+          supabase.from('matches').update({
+            winner_id: m.team_a_id || m.team_b_id,
+            status: 'completed',
+          }).eq('id', m.id)
+        )
+      );
+    }
+
+    setFixingBracket(false);
+  };
 
   const openAddTeam = () => {
     setEditingTeam(null);
@@ -217,6 +482,74 @@ export default function EventPage() {
     }
   };
 
+  const teamColumns = [
+    <TableColumn key="name">NAME</TableColumn>,
+    ...(canManage ? [<TableColumn key="actions" align="end">ACTIONS</TableColumn>] : []),
+  ];
+
+  const teamRows = teams.map((t) => {
+    const cells = [<TableCell key="name">{t.name}</TableCell>];
+    if (canManage) {
+      cells.push(
+        <TableCell key="actions" align="right">
+          <Button size="sm" variant="light" onPress={() => openEditTeam(t)}>Edit</Button>
+          <Button size="sm" color="danger" variant="light" onPress={() => removeTeam(t.id)}>Remove</Button>
+        </TableCell>
+      );
+    }
+    return <TableRow key={t.id}>{cells}</TableRow>;
+  });
+
+  const judgeColumns = [
+    <TableColumn key="judge">JUDGE</TableColumn>,
+    <TableColumn key="user_id">USER ID</TableColumn>,
+    ...(canManage ? [<TableColumn key="actions" align="end">ACTIONS</TableColumn>] : []),
+  ];
+
+  const judgeRows = judges.map((j) => {
+    const cells = [
+      <TableCell key="judge">
+        <div className="flex items-center gap-3">
+          <Avatar
+            src={j.avatar_url || undefined}
+            name={j.display_name}
+            size="sm"
+          />
+          <div className="flex flex-col">
+            <span className="font-medium leading-tight">
+              {j.display_name || "Unnamed Judge"}
+            </span>
+            <span className="text-xs text-foreground-500">
+              {j.email}
+            </span>
+          </div>
+        </div>
+      </TableCell>,
+      <TableCell key="user_id">
+        <code className="text-xs text-foreground-500">
+          {j.user_id}
+        </code>
+      </TableCell>,
+    ];
+
+    if (canManage) {
+      cells.push(
+        <TableCell key="actions" align="right">
+          <Button
+            size="sm"
+            color="danger"
+            variant="light"
+            onPress={() => removeJudge(j.user_id)}
+          >
+            Remove
+          </Button>
+        </TableCell>
+      );
+    }
+
+    return <TableRow key={j.user_id}>{cells}</TableRow>;
+  });
+
   if (loading && !event) {
     return (
       <div className="p-6 flex justify-center">
@@ -235,16 +568,31 @@ export default function EventPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <h1 className="text-2xl font-bold">{event?.name}</h1>
+    <div className="p-6 max-w-5xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
         <div>
+          <h1 className="text-2xl font-bold">{event?.name}</h1>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {eventTypes.map((t) => (
+              <Chip key={t} size="sm" variant="flat" color="primary">{t}</Chip>
+            ))}
+            <Chip size="sm" variant="flat">{event?.visibility}</Chip>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
           {canManage && (
             <Button as={Link} to={`/events/${id}/edit`} size="sm" variant="flat">
               Edit event
             </Button>
           )}
-          {/** add share event link button copy to clipboard*/}
+          {canManage && (
+            <Button size="sm" color="danger" variant="flat" onPress={() => {
+              setDeleteConfirmName('');
+              onDeleteOpen();
+            }}>
+              Delete event
+            </Button>
+          )}
           <Button size="sm" variant="flat" onPress={() => {
             const url = `${window.location.origin}/events/${id}`;
             navigator.clipboard.writeText(url);
@@ -255,6 +603,33 @@ export default function EventPage() {
         </div>
       </div>
       {error && <p className="text-danger text-sm mb-2">{error}</p>}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <Card>
+          <CardBody className="text-center">
+            <p className="text-xs text-default-500 uppercase tracking-wide">Teams</p>
+            <p className="text-xl font-semibold">{teams.length}</p>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="text-center">
+            <p className="text-xs text-default-500 uppercase tracking-wide">Judges</p>
+            <p className="text-xl font-semibold">{judges.length}</p>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="text-center">
+            <p className="text-xs text-default-500 uppercase tracking-wide">Matches</p>
+            <p className="text-xl font-semibold">{matches.length}</p>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="text-center">
+            <p className="text-xs text-default-500 uppercase tracking-wide">Polls</p>
+            <p className="text-xl font-semibold">{polls.length}</p>
+          </CardBody>
+        </Card>
+      </div>
 
       <Tabs aria-label="Event sections">
         <Tab key="details" title="Details">
@@ -272,26 +647,62 @@ export default function EventPage() {
               </Button>
             )}
             <Table aria-label="Teams">
-              <TableHeader>
-                <TableColumn>NAME</TableColumn>
-                {canManage && <TableColumn align="end">ACTIONS</TableColumn>}
-              </TableHeader>
-              <TableBody>
-                {teams.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell>{t.name}</TableCell>
-                    {canManage && (
-                      <TableCell align="right">
-                        <Button size="sm" variant="light" onPress={() => openEditTeam(t)}>Edit</Button>
-                        <Button size="sm" color="danger" variant="light" onPress={() => removeTeam(t.id)}>Remove</Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
+              <TableHeader>{teamColumns}</TableHeader>
+              <TableBody>{teamRows}</TableBody>
             </Table>
           </div>
         </Tab>
+        {hasType('bracket') && (
+        <Tab key="bracket" title="Bracket">
+          <div className="pt-4">
+            {canManage && (
+              <div className="flex flex-wrap items-end gap-3 mb-4">
+                <Select
+                  label="Bracket Type"
+                  selectedKeys={[bracketType]}
+                  onSelectionChange={(keys) => setBracketType([...keys][0] || 'single_elim')}
+                  className="max-w-xs"
+                >
+                  <SelectItem key="single_elim">Single Elimination</SelectItem>
+                  <SelectItem key="round_robin">Round Robin</SelectItem>
+                  <SelectItem key="swiss">Swiss System</SelectItem>
+                </Select>
+                {matches.length === 0 ? (
+                  <Button
+                    color="primary"
+                    isLoading={generatingBracket}
+                    onPress={handleGenerateBracket}
+                  >
+                    Generate Bracket
+                  </Button>
+                ) : (
+                  <Button
+                    color="warning"
+                    variant="flat"
+                    isLoading={regeneratingBracket}
+                    onPress={handleRegenerateBracket}
+                  >
+                    Regenerate Bracket
+                  </Button>
+                )}
+              </div>
+            )}
+            {matches.length === 0 ? (
+              <p className="text-default-500 text-sm">No bracket generated yet.</p>
+            ) : (
+              <BracketView
+                matches={matches}
+                teams={teams}
+                bracketType={matches[0]?.bracket_type || 'single_elim'}
+                canEdit={canJudge}
+                onEditMatch={handleEditMatch}
+              />
+            )}
+          </div>
+        </Tab>
+        )}
+
+        {hasType('points') && (
         <Tab key="leaderboard" title="Leaderboard">
           <div className="pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -307,6 +718,7 @@ export default function EventPage() {
             <Leaderboard teams={teams} canJudge={canJudge} onScoreChange={handleScoreChange} />
           </div>
         </Tab>
+        )}
         <Tab key="judges" title="Judges">
           <div className="pt-4">
             {canManage && (
@@ -315,64 +727,160 @@ export default function EventPage() {
               </Button>
             )}
             <Table aria-label="Judges">
-              <TableHeader>
-                <TableColumn>JUDGE</TableColumn>
-                <TableColumn>USER ID</TableColumn>
-                {canManage && <TableColumn align="end">ACTIONS</TableColumn>}
-              </TableHeader>
-              <TableBody>
-                {judges.map((j) => (
-                  <TableRow key={j.user_id}>
-                    {/* 👤 Profile cell */}
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar
-                          src={j.avatar_url || undefined}
-                          name={j.display_name}
-                          size="sm"
-                        />
-                        <div className="flex flex-col">
-                          <span className="font-medium leading-tight">
-                            {j.display_name || "Unnamed Judge"}
-                          </span>
-                          <span className="text-xs text-foreground-500">
-                            {j.email}
-                          </span>
-                        </div>
-                      </div>
-                    </TableCell>
-
-                    {/* 🆔 UUID */}
-                    <TableCell>
-                      <code className="text-xs text-foreground-500">
-                        {j.user_id}
-                      </code>
-                    </TableCell>
-
-                    {/* 🧨 Actions */}
-                    {canManage && (
-                      <TableCell align="right">
-                        <Button
-                          size="sm"
-                          color="danger"
-                          variant="light"
-                          onPress={() => removeJudge(j.user_id)}
-                        >
-                          Remove
-                        </Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
+              <TableHeader>{judgeColumns}</TableHeader>
+              <TableBody>{judgeRows}</TableBody>
             </Table>
           </div>
         </Tab>
-        <Tab key="audit" title="Audit log">
+        {hasType('poll') && (
+        <Tab key="polls" title="Polls">
+          <div className="pt-4">
+            {canManage && (
+              <Button size="sm" color="primary" className="mb-3" onPress={() => {
+                setSelectedPoll(null);
+                onPollEditorOpen();
+              }}>
+                Create poll
+              </Button>
+            )}
+            {polls.length === 0 ? (
+              <p className="text-default-500 text-sm">No polls yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {polls.map((poll) => (
+                  <div key={poll.id} className="border border-default-200 rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold">{poll.question}</p>
+                      {canManage && (
+                        <div className="flex gap-1">
+                          {poll.status === 'draft' && (
+                            <Button
+                              size="xs"
+                              color="primary"
+                              onPress={async () => {
+                                await supabase.from('polls').update({ status: 'open' }).eq('id', poll.id);
+                                await supabase.from('event_audit').insert({
+                                  event_id: id,
+                                  action: 'poll.open',
+                                  entity_type: 'poll',
+                                  entity_id: poll.id,
+                                  message: `Opened poll "${poll.question}"`,
+                                  created_by: user?.id,
+                                });
+                                fetch();
+                              }}
+                            >
+                              Open
+                            </Button>
+                          )}
+                          {poll.status === 'open' && (
+                            <Button
+                              size="xs"
+                              variant="flat"
+                              onPress={async () => {
+                                await supabase.from('polls').update({ status: 'closed' }).eq('id', poll.id);
+                                await supabase.from('event_audit').insert({
+                                  event_id: id,
+                                  action: 'poll.close',
+                                  entity_type: 'poll',
+                                  entity_id: poll.id,
+                                  message: `Closed poll "${poll.question}"`,
+                                  created_by: user?.id,
+                                });
+                                fetch();
+                              }}
+                            >
+                              Close
+                            </Button>
+                          )}
+                          {poll.status === 'closed' && (
+                            <Button
+                              size="xs"
+                              variant="flat"
+                              onPress={async () => {
+                                await supabase.from('polls').update({ status: 'open' }).eq('id', poll.id);
+                                await supabase.from('event_audit').insert({
+                                  event_id: id,
+                                  action: 'poll.reopen',
+                                  entity_type: 'poll',
+                                  entity_id: poll.id,
+                                  message: `Reopened poll "${poll.question}"`,
+                                  created_by: user?.id,
+                                });
+                                fetch();
+                              }}
+                            >
+                              Reopen
+                            </Button>
+                          )}
+                          {poll.status === 'closed' && (
+                            <Button
+                              size="xs"
+                              color="success"
+                              onPress={async () => {
+                                const { error } = await supabase.rpc('award_poll_points', { poll_id: poll.id });
+                                if (error) {
+                                  addToast({ title: 'Award failed', description: error.message, severity: 'danger' });
+                                } else {
+                                  await supabase.from('event_audit').insert({
+                                    event_id: id,
+                                    action: 'poll.award',
+                                    entity_type: 'poll',
+                                    entity_id: poll.id,
+                                    message: `Awarded points for poll "${poll.question}"`,
+                                    created_by: user?.id,
+                                  });
+                                  fetch();
+                                  addToast({ title: 'Points awarded', severity: 'success' });
+                                }
+                              }}
+                            >
+                              Award points
+                            </Button>
+                          )}
+                          <Button
+                            size="xs"
+                            variant="light"
+                            onPress={() => {
+                              setSelectedPoll(poll);
+                              onPollEditorOpen();
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="xs"
+                            color="danger"
+                            variant="light"
+                            onPress={() => handleDeletePoll(poll.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-default-500">Status: {poll.status}</p>
+                    {poll.status === 'open' && (
+                      <PollVote poll={poll} options={pollOptions[poll.id] || []} />
+                    )}
+                    <PollResultsLive
+                      pollId={poll.id}
+                      options={pollOptions[poll.id] || []}
+                      isLive={poll.status === 'open'}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Tab>
+        )}
+
+        {canManage && (<Tab key="audit" title="Audit log">
           <div className="pt-4">
             <AuditLog items={auditItems} currentUserId={user?.id} />
           </div>
-        </Tab>
+        </Tab>)}
       </Tabs>
 
       <Modal isOpen={isTeamOpen} onClose={onTeamClose}>
@@ -424,6 +932,74 @@ export default function EventPage() {
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      <MatchEditor
+        isOpen={isMatchOpen}
+        onClose={onMatchClose}
+        match={selectedMatch}
+        teams={teams}
+        onUpdate={() => fetch()}
+        onAudit={async (match, update) => {
+          const teamA = teams.find((t) => t.id === match.team_a_id)?.name || 'Team A';
+          const teamB = teams.find((t) => t.id === match.team_b_id)?.name || 'Team B';
+          const winnerName = teams.find((t) => t.id === update.winner_id)?.name || 'TBD';
+          await supabase.from('event_audit').insert({
+            event_id: id,
+            action: 'match.update',
+            entity_type: 'match',
+            entity_id: match.id,
+            message: `${teamA} ${update.team_a_score} - ${update.team_b_score} ${teamB} (winner: ${winnerName})`,
+            created_by: user?.id,
+            metadata: { status: update.status },
+          });
+        }}
+      />
+
+      <PollEditor
+        isOpen={isPollEditorOpen}
+        onClose={onPollEditorClose}
+        poll={selectedPoll}
+        eventId={id}
+        teams={teams}
+        onUpdate={() => fetch()}
+        currentUserId={user?.id}
+      />
+
+      <Modal isOpen={isDeleteOpen} onClose={onDeleteClose} size="md">
+        <ModalContent>
+          <ModalHeader>Delete event</ModalHeader>
+          <ModalBody className="space-y-2">
+            <p className="text-sm text-default-500">
+              This will permanently delete the event, its teams, matches, and polls.
+            </p>
+            <p className="text-sm">
+              Type <span className="font-semibold">"{event?.name}"</span> to confirm.
+            </p>
+            <Input
+              label="Event name"
+              placeholder={event?.name || ''}
+              value={deleteConfirmName}
+              onValueChange={setDeleteConfirmName}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onDeleteClose}>Cancel</Button>
+            <Button
+              color="danger"
+              isLoading={deletingEvent}
+              isDisabled={deleteConfirmName !== event?.name}
+              onPress={handleDeleteEvent}
+            >
+              Delete
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   );
+}
+
+function PollResultsLive({ pollId, options, isLive }) {
+  const votes = useLiveVotes(pollId);
+  return <PollResults options={options} votes={votes} isLive={isLive} />;
 }

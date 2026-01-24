@@ -8,7 +8,6 @@ const EVENT_TYPES = [
   { value: 'points', label: 'Points' },
   { value: 'bracket', label: 'Bracket' },
   { value: 'poll', label: 'Poll' },
-  { value: 'hybrid', label: 'Hybrid' },
 ];
 
 const VISIBILITY = [
@@ -24,7 +23,7 @@ export default function EventForm() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [type, setType] = useState('points');
+  const [types, setTypes] = useState(['points']);
   const [visibility, setVisibility] = useState('private');
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(isEdit);
@@ -47,7 +46,15 @@ export default function EventForm() {
       }
       setName(data.name || '');
       setDescription(data.description || '');
-      setType(data.type || 'points');
+      if (Array.isArray(data.event_types) && data.event_types.length > 0) {
+        setTypes(data.event_types);
+      } else if (data.type === 'hybrid') {
+        setTypes(['points', 'bracket', 'poll']);
+      } else if (data.type) {
+        setTypes([data.type]);
+      } else {
+        setTypes(['points']);
+      }
       setVisibility(data.visibility || 'private');
     })();
   }, [id, isEdit, user, profile?.role, navigate]);
@@ -56,7 +63,15 @@ export default function EventForm() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const payload = { name: name.trim(), description: description.trim() || null, type, visibility, updated_at: new Date().toISOString() };
+    const normalizedTypes = types.length > 0 ? types : ['points'];
+    const payload = {
+      name: name.trim(),
+      description: description.trim() || null,
+      type: normalizedTypes[0] || 'points',
+      event_types: normalizedTypes,
+      visibility,
+      updated_at: new Date().toISOString(),
+    };
 
     if (isEdit) {
       const { error: e } = await supabase.from('events').update(payload).eq('id', id);
@@ -103,7 +118,15 @@ export default function EventForm() {
           value={description}
           onValueChange={setDescription}
         />
-        <Select label="Type" selectedKeys={[type]} onSelectionChange={(s) => setType([...s][0] || 'points')}>
+        <Select
+          label="Event types"
+          selectionMode="multiple"
+          selectedKeys={new Set(types)}
+          onSelectionChange={(s) => {
+            const next = Array.from(s);
+            setTypes(next.length ? next : ['points']);
+          }}
+        >
           {EVENT_TYPES.map((o) => (
             <SelectItem key={o.value}>{o.label}</SelectItem>
           ))}

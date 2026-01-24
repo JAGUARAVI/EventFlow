@@ -7,6 +7,7 @@ import Dashboard from './routes/Dashboard';
 import EventPage from './routes/EventPage';
 import EventForm from './routes/EventForm';
 import PublicLeaderboard from './routes/PublicLeaderboard';
+import PublicPollVote from './routes/PublicPollVote';
 import Profile from './routes/Profile';
 import NotFound from './routes/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -48,6 +49,7 @@ export default function App() {
               }
             />
             <Route path="/events/:id/leaderboard" element={<PublicLeaderboard />} />
+            <Route path="/events/:id/vote" element={<PublicPollVote />} />
             <Route path="/events/:id" element={<EventPage />} />
             <Route
               path="/profile"
