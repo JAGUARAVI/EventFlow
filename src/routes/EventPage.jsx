@@ -749,10 +749,23 @@ export default function EventPage() {
               <div className="space-y-3">
                 {polls.map((poll) => (
                   <div key={poll.id} className="border border-default-200 rounded-lg p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold">{poll.question}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{poll.question}</p>
+                        <p className="text-xs text-default-500 mt-1">Status: {poll.status}</p>
+                      </div>
                       {canManage && (
-                        <div className="flex gap-1">
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="xs"
+                            variant="light"
+                            onPress={() => {
+                              setSelectedPoll(poll);
+                              onPollEditorOpen();
+                            }}
+                          >
+                            Edit
+                          </Button>
                           {poll.status === 'draft' && (
                             <Button
                               size="xs"
@@ -840,16 +853,6 @@ export default function EventPage() {
                           )}
                           <Button
                             size="xs"
-                            variant="light"
-                            onPress={() => {
-                              setSelectedPoll(poll);
-                              onPollEditorOpen();
-                            }}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="xs"
                             color="danger"
                             variant="light"
                             onPress={() => handleDeletePoll(poll.id)}
@@ -859,9 +862,8 @@ export default function EventPage() {
                         </div>
                       )}
                     </div>
-                    <p className="text-xs text-default-500">Status: {poll.status}</p>
                     {poll.status === 'open' && (
-                      <PollVote poll={poll} options={pollOptions[poll.id] || []} />
+                      <PollVote poll={poll} options={pollOptions[poll.id] || []} showQuestion={false} />
                     )}
                     <PollResultsLive
                       pollId={poll.id}

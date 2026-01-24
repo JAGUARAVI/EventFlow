@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
-export default function PollVote({ poll, options, onVoted }) {
+export default function PollVote({ poll, options, onVoted, showQuestion = true }) {
   const { user } = useAuth();
   const [selectedOptionId, setSelectedOptionId] = useState('');
   const [voting, setVoting] = useState(false);
@@ -65,7 +65,9 @@ export default function PollVote({ poll, options, onVoted }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-base font-semibold">{poll?.question}</p>
+      {showQuestion && (
+        <p className="text-base font-semibold">{poll?.question}</p>
+      )}
       <div className="space-y-2">
         {options.map((opt) => (
           <motion.button

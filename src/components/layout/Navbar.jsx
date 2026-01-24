@@ -1,7 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Navbar as HeroNavbar, NavbarBrand, NavbarContent, NavbarItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
-import { Button } from '@heroui/react';
-import { Switch } from '@heroui/react';
+import { Navbar as HeroNavbar, NavbarBrand, NavbarContent, NavbarItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar, Button, Switch } from '@heroui/react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -10,6 +8,7 @@ export default function Navbar() {
   const { isDark, setDark } = useTheme();
 
   const displayName = profile?.display_name || user?.email || 'User';
+  const avatarUrl = profile?.avatar_url || '';
 
   return (
     <HeroNavbar isBordered maxWidth="xl">
@@ -31,8 +30,9 @@ export default function Navbar() {
         {user ? (
           <Dropdown>
             <DropdownTrigger>
-              <Button size="sm" variant="flat">
-                {displayName}
+              <Button size="sm" variant="flat" className="flex items-center gap-2">
+                <Avatar src={avatarUrl || undefined} name={displayName} size="sm" />
+                <span className="hidden sm:inline">{displayName}</span>
               </Button>
             </DropdownTrigger>
             <DropdownMenu>
