@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, AvatarIcon} from '@heroui/react';
+import { Link as HeroLink } from '@heroui/link';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtimeLeaderboard } from '../hooks/useRealtimeLeaderboard';
@@ -237,11 +238,21 @@ export default function EventPage() {
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between gap-4 mb-4">
         <h1 className="text-2xl font-bold">{event?.name}</h1>
-        {canManage && (
-          <Button as={Link} to={`/events/${id}/edit`} size="sm" variant="flat">
-            Edit event
+        <div>
+          {canManage && (
+            <Button as={Link} to={`/events/${id}/edit`} size="sm" variant="flat">
+              Edit event
+            </Button>
+          )}
+          {/** add share event link button copy to clipboard*/}
+          <Button size="sm" variant="flat" onPress={() => {
+            const url = `${window.location.origin}/events/${id}`;
+            navigator.clipboard.writeText(url);
+            addToast({ title: 'Event link copied to clipboard', severity: 'success' });
+          }}>
+            Share event
           </Button>
-        )}
+        </div>
       </div>
       {error && <p className="text-danger text-sm mb-2">{error}</p>}
 
@@ -284,9 +295,9 @@ export default function EventPage() {
         <Tab key="leaderboard" title="Leaderboard">
           <div className="pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <Link to={`/events/${id}/leaderboard`} isExternal  className="text-primary text-sm underline">
+              <HeroLink showAnchorIcon href={`/events/${id}/leaderboard`} isExternal={true}>
                 Big-screen view
-              </Link>
+              </HeroLink>
               {canJudge && (
                 <Button size="sm" variant="flat" onPress={handleUndo}>
                   Undo last
