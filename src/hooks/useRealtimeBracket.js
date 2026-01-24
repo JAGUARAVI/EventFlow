@@ -17,7 +17,10 @@ export function useRealtimeBracket(eventId, setMatches) {
         { event: '*', schema: 'public', table: 'matches', filter: `event_id=eq.${eventId}` },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setMatches((prev) => [...prev, payload.new]);
+            setMatches((prev) => {
+              if (prev.some((m) => m.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
           } else if (payload.eventType === 'UPDATE') {
             setMatches((prev) => prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)));
           } else if (payload.eventType === 'DELETE') {

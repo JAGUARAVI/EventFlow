@@ -19,10 +19,10 @@ export default function Landing() {
       <div className="max-w-5xl mx-auto px-6 py-16">
         <div className="flex flex-col items-center text-center gap-6">
           <div className="space-y-2">
-            <p className="text-sm uppercase tracking-[0.2em] text-default-500">DesignBattles</p>
+            <p className="text-sm uppercase tracking-[0.2em] text-default-500">EventFlow</p>
             <h1 className="text-4xl md:text-5xl font-bold">Run live competitions with confidence</h1>
             <p className="text-default-500 max-w-xl mx-auto">
-              Brackets, leaderboards, judges, and live polls—everything you need to power creative battle events.
+              Brackets, leaderboards, judges, and live polls—everything you need to power creative or battle events.
             </p>
           </div>
           <div className="flex flex-wrap gap-3 justify-center">

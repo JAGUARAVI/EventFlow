@@ -14,7 +14,7 @@ import {
   Divider,
   Spinner,
 } from '@heroui/react';
-import { Pin, PinOff, Trash2, Plus } from 'lucide-react';
+import { Pin, PinOff, Trash2, Plus, Edit2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -27,6 +27,16 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+
+  const fetchProfile = async (userId) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, display_name, avatar_url, email')
+      .eq('id', userId)
+      .single();
+    return data || { id: userId };
+  };
 
   useEffect(() => {
     loadAnnouncements();
@@ -42,13 +52,28 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
           table: 'announcements',
           filter: `event_id=eq.${eventId}`,
         },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === 'INSERT') {
-            setAnnouncements((prev) => [payload.new, ...prev]);
+            const author = await fetchProfile(payload.new.created_by);
+            setAnnouncements((prev) => [{ ...payload.new, author }, ...prev]);
           } else if (payload.eventType === 'UPDATE') {
-            setAnnouncements((prev) =>
-              prev.map((a) => (a.id === payload.new.id ? payload.new : a))
-            );
+            setAnnouncements((prev) => {
+              const updated = prev.map((a) => {
+                if (a.id === payload.new.id) {
+                  // Preserve author if created_by hasn't changed, otherwise we'd need to fetch
+                  return { ...payload.new, author: a.created_by === payload.new.created_by ? a.author : undefined };
+                }
+                return a;
+              });
+              
+              // Re-sort: Pinned first, then by date descending
+              return updated.sort((a, b) => {
+                if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                return new Date(b.created_at) - new Date(a.created_at);
+              });
+            });
+            // If created_by changed (unlikely for announcements), we might have undefined author. 
+            // Could add a check to fetch it, but skipping for simplicity.
           } else if (payload.eventType === 'DELETE') {
             setAnnouncements((prev) => prev.filter((a) => a.id !== payload.old.id));
           }
@@ -63,15 +88,34 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
 
   const loadAnnouncements = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: announcementsData, error } = await supabase
         .from('announcements')
-        .select('*, created_by(*)')
+        .select('*')
         .eq('event_id', eventId)
         .order('pinned', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setAnnouncements(data || []);
+      
+      if (announcementsData && announcementsData.length > 0) {
+        const userIds = [...new Set(announcementsData.map(a => a.created_by))];
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, display_name, avatar_url, email')
+          .in('id', userIds);
+          
+        const profileMap = new Map((profilesData || []).map(p => [p.id, p]));
+        
+        const merged = announcementsData.map(a => ({
+          ...a,
+          author: profileMap.get(a.created_by) || { id: a.created_by }
+        }));
+        
+        setAnnouncements(merged);
+      } else {
+        setAnnouncements([]);
+      }
+
     } catch (err) {
       console.error('Failed to load announcements:', err);
     } finally {
@@ -79,28 +123,53 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
     }
   };
 
-  const handlePostAnnouncement = async () => {
+  const handleSaveAnnouncement = async () => {
     if (!title.trim() || !body.trim()) return;
 
     setPosting(true);
     try {
-      const { error } = await supabase.from('announcements').insert({
-        event_id: eventId,
-        title,
-        body_markdown: body,
-        created_by: user.id,
-      });
+      if (editingId) {
+        const { error } = await supabase
+          .from('announcements')
+          .update({
+            title,
+            body_markdown: body,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingId);
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from('announcements').insert({
+          event_id: eventId,
+          title,
+          body_markdown: body,
+          created_by: user.id,
+        }).select().single();
 
-      setTitle('');
-      setBody('');
-      setIsOpen(false);
+        if (error) throw error;
+      }
+
+      handleCloseModal();
     } catch (err) {
-      console.error('Failed to post announcement:', err);
+      console.error('Failed to save announcement:', err);
     } finally {
       setPosting(false);
     }
+  };
+
+  const handleCloseModal = () => {
+    setTitle('');
+    setBody('');
+    setEditingId(null);
+    setIsOpen(false);
+  };
+
+  const handleEdit = (announcement) => {
+    setEditingId(announcement.id);
+    setTitle(announcement.title);
+    setBody(announcement.body_markdown);
+    setIsOpen(true);
   };
 
   const togglePin = async (id, currentlyPinned) => {
@@ -166,12 +235,12 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
                         <div className="flex items-center gap-2 mb-2">
                           <Avatar
                             size="sm"
-                            src={announcement.created_by?.avatar_url}
-                            name={announcement.created_by?.full_name}
+                            src={announcement.author?.avatar_url}
+                            name={announcement.author?.display_name || announcement.author?.email}
                           />
                           <div>
                             <p className="text-sm font-semibold">
-                              {announcement.created_by?.full_name || 'Unknown'}
+                              {announcement.author?.display_name || announcement.author?.email || 'Unknown'}
                             </p>
                             <p className="text-xs text-default-500">
                               {new Date(announcement.created_at).toLocaleString()}
@@ -191,6 +260,17 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
 
                       {canManage && (
                         <div className="flex gap-1 flex-col">
+                          {user?.id === announcement.created_by && (
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              onPress={() => handleEdit(announcement)}
+                              title="Edit"
+                            >
+                              <Edit2 size={16} />
+                            </Button>
+                          )}
                           <Button
                             isIconOnly
                             size="sm"
@@ -227,10 +307,10 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
         )}
       </CardBody>
 
-      {/* Post Announcement Modal */}
-      <Modal isOpen={isOpen} onOpenChange={setIsOpen} size="2xl">
+      {/* Post/Edit Announcement Modal */}
+      <Modal isOpen={isOpen} onOpenChange={(open) => !open && handleCloseModal()} size="2xl">
         <ModalContent>
-          <ModalHeader>Post Announcement</ModalHeader>
+          <ModalHeader>{editingId ? 'Edit Announcement' : 'Post Announcement'}</ModalHeader>
           <ModalBody>
             <Input
               label="Title"
@@ -265,16 +345,16 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
           </ModalBody>
 
           <ModalFooter>
-            <Button color="default" onPress={() => setIsOpen(false)}>
+            <Button color="default" onPress={handleCloseModal}>
               Cancel
             </Button>
             <Button
               color="primary"
-              onPress={handlePostAnnouncement}
+              onPress={handleSaveAnnouncement}
               isLoading={posting}
               isDisabled={!title.trim() || !body.trim()}
             >
-              Post
+              {editingId ? 'Save Changes' : 'Post'}
             </Button>
           </ModalFooter>
         </ModalContent>

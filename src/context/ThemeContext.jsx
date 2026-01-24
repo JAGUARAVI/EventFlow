@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
-const STORAGE_KEY = 'designbattles-theme';
-const THEME_COLOR_KEY = 'designbattles-theme-colors';
+const STORAGE_KEY = 'eventflow-theme';
+const THEME_COLOR_KEY = 'eventflow-theme-colors';
 
 // Default theme colors
 const DEFAULT_COLORS = {
@@ -11,6 +11,16 @@ const DEFAULT_COLORS = {
   neutral: '#6b7280',
   surface: '#ffffff',
   background: '#f9fafb',
+};
+
+// Map internal color keys to HeroUI CSS variables
+export const COLOR_VAR_MAP = {
+  primary: '--heroui-primary',
+  secondary: '--heroui-secondary', 
+  accent: '--heroui-focus',
+  neutral: '--heroui-default',
+  surface: '--heroui-content1',
+  background: '--heroui-background',
 };
 
 function readInitialMode() {
@@ -47,7 +57,11 @@ export function ThemeProvider({ children }) {
     
     // Apply color variables
     Object.entries(colors).forEach(([key, value]) => {
-      root.style.setProperty(`--color-${key}`, value);
+      const varName = COLOR_VAR_MAP[key] || `--color-${key}`;
+      //root.style.setProperty(varName, value);
+
+      // Also set the --color- version for backwards compatibility/custom usage
+      //root.style.setProperty(`--color-${key}`, value);
     });
   }, [isDark, colors]);
 
@@ -82,6 +96,7 @@ export function ThemeProvider({ children }) {
         updateColors,
         resetColors,
         defaultColors: DEFAULT_COLORS,
+        colorMap: COLOR_VAR_MAP,
       }}
     >
       {children}

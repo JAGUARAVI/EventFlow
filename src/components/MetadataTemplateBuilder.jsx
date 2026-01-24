@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Button,
   Modal,
@@ -31,9 +31,38 @@ const FIELD_TYPES = [
 export default function MetadataTemplateBuilder({ eventId, initialTemplate, onSave }) {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [template, setTemplate] = useState(initialTemplate);
   const [fields, setFields] = useState(initialTemplate?.fields_json || []);
   const [newField, setNewField] = useState({ name: '', type: 'text', required: false });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Load existing template when modal opens
+  useEffect(() => {
+    if (isOpen && !initialTemplate && eventId) {
+      loadTemplate();
+    }
+  }, [isOpen, eventId, initialTemplate]);
+
+  const loadTemplate = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('metadata_templates')
+        .select('*')
+        .eq('event_id', eventId)
+        .maybeSingle();
+
+      if (!error && data) {
+        setTemplate(data);
+        setFields(data.fields_json || []);
+      }
+    } catch (err) {
+      console.error('Failed to load template:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAddField = () => {
     if (!newField.name.trim()) return;
@@ -95,25 +124,31 @@ export default function MetadataTemplateBuilder({ eventId, initialTemplate, onSa
     try {
       setSaving(true);
 
-      if (initialTemplate) {
-        // Update existing
+      if (template) {
+        // Update existing template
         const { error } = await supabase
           .from('metadata_templates')
-          .update({ fields_json: fields })
-          .eq('id', initialTemplate.id);
+          .update({ 
+            fields_json: fields,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', template.id);
 
         if (error) throw error;
       } else {
-        // Create new
-        const { error } = await supabase
+        // Create new template
+        const { data, error } = await supabase
           .from('metadata_templates')
           .insert({
             event_id: eventId,
             fields_json: fields,
             created_by: user?.id,
-          });
+          })
+          .select()
+          .single();
 
         if (error) throw error;
+        setTemplate(data);
       }
 
       if (onSave) {
@@ -136,17 +171,21 @@ export default function MetadataTemplateBuilder({ eventId, initialTemplate, onSa
         variant="bordered"
         size="sm"
       >
-        {initialTemplate ? 'Edit' : 'Create'} Team Fields
+        {template || initialTemplate ? 'Edit' : 'Create'} Team Fields
       </Button>
 
       <Modal isOpen={isOpen} onOpenChange={setIsOpen} size="2xl">
         <ModalContent>
-          <ModalHeader>Team Metadata Fields</ModalHeader>
+          <ModalHeader>{template || initialTemplate ? 'Edit' : 'Create'} Team Metadata Fields</ModalHeader>
 
           <ModalBody className="gap-4">
-            <p className="text-sm text-default-600">
-              Define custom fields that will appear in team profiles
-            </p>
+            {loading ? (
+              <p className="text-sm text-default-600">Loading template...</p>
+            ) : (
+              <>
+                <p className="text-sm text-default-600">
+                  {template || initialTemplate ? 'Edit existing fields or' : 'Define'} custom fields that will appear in team profiles
+                </p>
 
             {/* Existing Fields */}
             {fields.length > 0 && (
@@ -295,6 +334,8 @@ export default function MetadataTemplateBuilder({ eventId, initialTemplate, onSa
                 Add Field
               </Button>
             </div>
+              </>
+            )}
           </ModalBody>
 
           <ModalFooter>
@@ -305,7 +346,7 @@ export default function MetadataTemplateBuilder({ eventId, initialTemplate, onSa
               color="primary"
               onPress={handleSave}
               isLoading={saving}
-              isDisabled={fields.length === 0}
+              isDisabled={fields.length === 0 || loading}
             >
               Save Template
             </Button>

@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { Navbar as HeroNavbar, NavbarBrand, NavbarContent, NavbarItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar, Button, Switch, Modal, ModalContent, ModalHeader, ModalBody, useDisclosure } from '@heroui/react';
-import { Palette } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../context/ThemeContext';
 import ThemeBuilder from '../ThemeBuilder';
@@ -8,7 +7,6 @@ import ThemeBuilder from '../ThemeBuilder';
 export default function Navbar() {
   const { user, profile, signOut } = useAuth();
   const { isDark, setDark } = useTheme();
-  const { isOpen: isThemeOpen, onOpen: onThemeOpen, onClose: onThemeClose } = useDisclosure();
 
   const displayName = profile?.display_name || user?.email || 'User';
   const avatarUrl = profile?.avatar_url || '';
@@ -17,22 +15,11 @@ export default function Navbar() {
     <>
       <HeroNavbar isBordered maxWidth="xl">
         <NavbarBrand as={Link} to="/">
-          <span className="font-bold text-inherit">DesignBattles</span>
+          <span className="font-bold text-inherit">EventFlow</span>
         </NavbarBrand>
         <NavbarContent justify="end" className="gap-2">
           <NavbarItem>
             <Link to="/dashboard">Dashboard</Link>
-          </NavbarItem>
-          <NavbarItem>
-            <Button
-              size="sm"
-              variant="light"
-              isIconOnly
-              onPress={onThemeOpen}
-              aria-label="Customize theme"
-            >
-              <Palette size={20} />
-            </Button>
           </NavbarItem>
           <NavbarItem>
             <Switch
@@ -73,15 +60,6 @@ export default function Navbar() {
           )}
         </NavbarContent>
       </HeroNavbar>
-
-      <Modal isOpen={isThemeOpen} onClose={onThemeClose} size="lg">
-        <ModalContent>
-          <ModalHeader>Customize Theme</ModalHeader>
-          <ModalBody>
-            <ThemeBuilder />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
     </>
   );
 }

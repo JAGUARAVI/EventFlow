@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Tabs, Tab, Button, Input, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, addToast, Avatar, Select, SelectItem, Card, CardBody, Chip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
 import { Link as HeroLink } from '@heroui/link';
-import { Download, Copy, Trash2, Settings, Share2, MoreVertical } from 'lucide-react';
+import { Download, Copy, Trash2, Settings, Share2, MoreVertical, Search, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtimeLeaderboard } from '../hooks/useRealtimeLeaderboard';
@@ -62,6 +62,8 @@ export default function EventPage() {
   const [teamSaving, setTeamSaving] = useState(false);
   const [editingTeam, setEditingTeam] = useState(null);
   const [changingRegistrationStatus, setChangingRegistrationStatus] = useState(false);
+  const [teamSearch, setTeamSearch] = useState('');
+  const [expandedTeams, setExpandedTeams] = useState(new Set());
 
   const { isOpen: isJudgeOpen, onOpen: onJudgeOpen, onClose: onJudgeClose } = useDisclosure();
   const [judgeQuery, setJudgeQuery] = useState('');
@@ -99,6 +101,28 @@ export default function EventPage() {
 
   // Load and apply event-specific theme
   const { eventTheme, updateEventTheme, hasEventTheme } = useEventTheme(id, canManage);
+
+  const toggleTeamExpansion = (teamId) => {
+    setExpandedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) next.delete(teamId);
+      else next.add(teamId);
+      return next;
+    });
+  };
+
+  const filteredTeams = teams.filter((t) => {
+    const search = teamSearch.toLowerCase();
+    const matchesName = t.name.toLowerCase().includes(search);
+    const matchesDesc = t.description && t.description.toLowerCase().includes(search);
+    const matchesMetadata = t.metadata_values && Object.values(t.metadata_values).some(val => {
+      if (Array.isArray(val)) {
+        return val.some(item => String(item).toLowerCase().includes(search));
+      }
+      return String(val).toLowerCase().includes(search);
+    });
+    return matchesName || matchesDesc || matchesMetadata;
+  });
 
   const fetch = useCallback(async () => {
     if (!id) return;
@@ -395,12 +419,13 @@ export default function EventPage() {
 
   const saveTeam = async () => {
     const name = teamName.trim();
+    const created_by = user?.id || null;
     if (!name) return;
     setTeamSaving(true);
     if (editingTeam) {
       const { error: e } = await supabase
         .from('teams')
-        .update({ name, metadata_values: teamMetadata })
+        .update({ name, metadata_values: teamMetadata, created_by })
         .eq('id', editingTeam.id);
       setTeamSaving(false);
       if (e) {
@@ -429,17 +454,21 @@ export default function EventPage() {
   };
 
   const updateRegistrationStatus = async (newStatus) => {
-    setChangingRegistrationStatus(true);
-    const { error } = await supabase
-      .from('events')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    setChangingRegistrationStatus(false);
-    if (error) {
-      addToast({ title: 'Failed to update registration status', description: error.message, severity: 'danger' });
-    } else {
-      fetch();
-      addToast({ title: `Registrations ${newStatus === 'registration_open' ? 'opened' : 'closed'}`, severity: 'success' });
+    try {
+      setChangingRegistrationStatus(true);
+      const { error } = await supabase
+        .from('events')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      
+      if (error) {
+        addToast({ title: 'Failed to update registration status', description: error.message, severity: 'danger' });
+      } else {
+        await fetch();
+        addToast({ title: `Registrations ${newStatus === 'registration_open' ? 'opened' : 'closed'}`, severity: 'success' });
+      }
+    } finally {
+      setChangingRegistrationStatus(false);
     }
   };
 
@@ -683,7 +712,9 @@ export default function EventPage() {
               />
             </>
           )}
-          <CsvManager eventId={id} teams={teams} onTeamsImported={() => fetch()} />
+          {canManage && (
+            <CsvManager eventId={id} teams={teams} onTeamsImported={() => fetch()} />
+          )}
           {canManage && (
             <Button size="sm" variant="flat" onPress={onThemeOpen}>
               Customize Theme
@@ -757,6 +788,7 @@ export default function EventPage() {
                     color="primary"
                     onPress={() => updateRegistrationStatus('registration_open')}
                     isLoading={changingRegistrationStatus}
+                    isDisabled={changingRegistrationStatus}
                   >
                     Open Registrations
                   </Button>
@@ -767,6 +799,7 @@ export default function EventPage() {
                     variant="flat"
                     onPress={() => updateRegistrationStatus('registration_closed')}
                     isLoading={changingRegistrationStatus}
+                    isDisabled={changingRegistrationStatus}
                   >
                     Close Registrations
                   </Button>
@@ -805,40 +838,66 @@ export default function EventPage() {
                 {registrationsOpen ? 'Register Team' : 'Registrations Closed'}
               </Button>
             )}
+            
+            <Input
+              startContent={<Search className="text-default-400" size={16} />}
+              placeholder="Search teams..."
+              value={teamSearch}
+              onValueChange={setTeamSearch}
+              className="mb-2"
+              isClearable
+              onClear={() => setTeamSearch('')}
+            />
+
             <div className="space-y-2">
-              {teams.length === 0 ? (
-                <p className="text-default-500 text-sm">No teams yet.</p>
+              {filteredTeams.length === 0 ? (
+                <p className="text-default-500 text-sm">{teams.length === 0 ? 'No teams yet.' : 'No teams found matching your search.'}</p>
               ) : (
-                teams.map((t) => (
-                  <Card key={t.id} isBlurred>
-                    <CardBody className="gap-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="font-semibold text-lg">{t.name}</p>
-                          {t.description && (
-                            <p className="text-sm text-default-500 mt-1">{t.description}</p>
+                filteredTeams.map((t) => {
+                  const isExpanded = expandedTeams.has(t.id);
+                  return (
+                    <Card key={t.id} isBlurred>
+                      <CardBody className="gap-3">
+                        <div className="flex items-center justify-between">
+                          <div 
+                            className="flex-1 cursor-pointer flex items-center gap-2" 
+                            onClick={() => toggleTeamExpansion(t.id)}
+                          >
+                            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                              <ChevronDown size={20} className="text-default-500" />
+                            </div>
+                            <div>
+                              <p className="font-semibold text-lg">{t.name}</p>
+                              {t.description && (
+                                <p className="text-sm text-default-500 mt-1">{t.description}</p>
+                              )}
+                            </div>
+                          </div>
+                          {canManage && (
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="light" onPress={() => openEditTeam(t)}>
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                color="danger"
+                                variant="light"
+                                onPress={() => removeTeam(t.id)}
+                              >
+                                Remove
+                              </Button>
+                            </div>
                           )}
                         </div>
-                        {canManage && (
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="light" onPress={() => openEditTeam(t)}>
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              color="danger"
-                              variant="light"
-                              onPress={() => removeTeam(t.id)}
-                            >
-                              Remove
-                            </Button>
+                        {isExpanded && (
+                          <div className="pt-2 mt-2 border-t border-default-100">
+                            <TeamMetadataDisplay eventId={id} teamMetadata={t.metadata_values || {}} />
                           </div>
                         )}
-                      </div>
-                      <TeamMetadataDisplay eventId={id} teamMetadata={t.metadata_values || {}} />
-                    </CardBody>
-                  </Card>
-                ))
+                      </CardBody>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </div>
@@ -1095,6 +1154,16 @@ export default function EventPage() {
 
         {canManage && (<Tab key="audit" title="Audit log">
           <div className="pt-4">
+            <div className="flex justify-end mb-2">
+              <Button 
+                size="sm" 
+                variant="flat" 
+                onPress={() => fetch()} 
+                startContent={<RefreshCw size={16} />}
+              >
+                Refresh Log
+              </Button>
+            </div>
             <AuditLog items={auditItems} currentUserId={user?.id} />
           </div>
         </Tab>)}
@@ -1234,9 +1303,11 @@ export default function EventPage() {
             <p className="text-sm text-default-500 mb-4">
               Set custom colors for this event. These colors will be visible to all viewers when they visit this event.
             </p>
-            <ThemeBuilder
+            <ThemeBuilder // add save functionality
               initialColors={eventTheme?.colors_json}
+              onOpenChange={() => {}}
               onSave={(colors) => {
+                console.log('Saving event theme colors:', colors);
                 updateEventTheme(colors);
                 addToast({ title: 'Event theme saved', severity: 'success' });
                 onThemeClose();

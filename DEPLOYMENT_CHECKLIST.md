@@ -221,7 +221,6 @@ npm run build
 
 # Deploy dist/ folder to staging environment
 # (Vercel, Netlify, or custom hosting)
-# URL: https://staging.designbattles.com (example)
 ```
 
 #### Step 3.2: Update Staging Environment Variables

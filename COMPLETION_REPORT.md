@@ -4,7 +4,7 @@
 
 ## Executive Summary
 
-Full implementation of Phase 6 (Hybrid/Advanced Formats) and Phase 7 (Polish & Admin Tools) for the DesignBattles platform. **13 out of 13 core features** completed with production-ready code.
+Full implementation of Phase 6 (Hybrid/Advanced Formats) and Phase 7 (Polish & Admin Tools) for the EventFlow platform. **13 out of 13 core features** completed with production-ready code.
 
 ### Stats
 - **3 Database Migrations** created (rounds, tasks, themes, announcements, etc.)

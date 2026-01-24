@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Button,
   Card,
@@ -7,11 +7,12 @@ import {
   Divider,
 } from '@heroui/react';
 import { Palette, RotateCcw } from 'lucide-react';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme, COLOR_VAR_MAP } from '../context/ThemeContext';
 
 export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSave }) {
   const { colors, updateColors, resetColors, defaultColors } = useTheme();
   const [tempColors, setTempColors] = useState(initialColors || colors);
+  const savedRef = useRef(false);
 
   // Update tempColors when initialColors changes (for event themes)
   useEffect(() => {
@@ -20,15 +21,57 @@ export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSa
     }
   }, [initialColors]);
 
+  // Live preview and cleanup
+  useEffect(() => {
+    const root = document.documentElement;
+    // Apply temporary colors for preview
+    Object.entries(tempColors).forEach(([key, value]) => {
+      const varName = COLOR_VAR_MAP[key] || `--color-${key}`;
+      //root.style.setProperty(varName, value);
+      // Keep legacy support for now
+      //root.style.setProperty(`--color-${key}`, value);
+    });
+
+    return () => {
+      // On unmount or change, if not saved, revert to original
+      // This runs before the next effect or on unmount
+      if (!savedRef.current) {
+        // If we are unmounting permanently (modal closed without save), this reverts.
+        // If just re-rendering (color change), the next effect immediately re-applies tempColors.
+      }
+    };
+  }, [tempColors]);
+
+  // Handle final cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (!savedRef.current) {
+        const root = document.documentElement;
+        // Revert to initial state (either event specific or global)
+        const target = initialColors || colors;
+        Object.entries(target).forEach(([key, value]) => {
+           const varName = COLOR_VAR_MAP[key] || `--color-${key}`;
+           if(value) {
+             //root.style.setProperty(varName, value);
+             //root.style.setProperty(`--color-${key}`, value);
+           } else {
+             //root.style.removeProperty(varName);
+             //root.style.removeProperty(`--color-${key}`);
+           }
+        });
+      }
+    };
+  }, []); // Run once on mount, cleanup on unmount
+
   const handleColorChange = (key, value) => {
-    setTempColors({ ...tempColors, [key]: value });
+    setTempColors(prev => ({ ...prev, [key]: value }));
   };
 
   const handleApply = () => {
+    savedRef.current = true;
     if (onSave) {
-      // Event-specific theme save
+      // Event-specific theme save - DO NOT update global localStorage
       onSave(tempColors);
-      updateColors(tempColors); // Also update global theme to reflect changes
     } else {
       // Global theme save
       updateColors(tempColors);
@@ -37,8 +80,8 @@ export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSa
   };
 
   const handleCancel = () => {
-    setTempColors(colors);
-    updateColors(colors); // Also update global theme to reflect changes
+    // Revert logic handled by unmount effect, but we can also be explicit
+    setTempColors(initialColors || colors); // Updates state, triggering effect
     if (onOpenChange) onOpenChange(false);
   };
 
@@ -142,21 +185,13 @@ export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSa
           <RotateCcw size={18} />
         </Button>
 
-        {onOpenChange && (
-          <>
-            <Button color="default" onPress={handleCancel}>
-              Cancel
-            </Button>
-
-            <Button
-              color="primary"
-              onPress={handleApply}
-              startContent={<Palette size={16} />}
-            >
-              Apply Theme
-            </Button>
-          </>
-        )}
+        <Button
+          color="primary"
+          onPress={handleApply}
+          startContent={<Palette size={16} />}
+        >
+          Apply Theme
+        </Button>
       </div>
     </div>
   );
