@@ -35,7 +35,10 @@ export default function Dashboard() {
 
     // Keep HEAD Logic: useCallback wrapper for fetching
     const fetchDashboardData = useCallback(async (showLoading = true) => {
-        if (!user?.id || !profile?.role) return;
+        if (!user?.id || !profile?.role) {
+            setLoading(false);
+            return;
+        }
         if (showLoading) setLoading(true);
 
         try {

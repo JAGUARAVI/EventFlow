@@ -246,120 +246,126 @@ export default function EventPage() {
         async (showLoading = false) => {
             if (!id) return;
             if (showLoading) setLoading(true);
-            const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes, rRes] =
-                await Promise.all([
-                    supabase.from("events").select("*").eq("id", id).single(),
-                    supabase
-                        .from("teams")
-                        .select("*")
-                        .eq("event_id", id)
-                        .order("created_at"),
-                    supabase
-                        .from("event_judges")
-                        .select("user_id, created_at")
-                        .eq("event_id", id),
-                    supabase
-                        .from("score_history")
-                        .select("*, teams(name)")
-                        .eq("event_id", id)
-                        .order("created_at", { ascending: true }),
-                    supabase
-                        .from("matches")
-                        .select("*")
-                        .eq("event_id", id)
-                        .order("round", { ascending: false })
-                        .order("position"),
-                    supabase
-                        .from("polls")
-                        .select("*")
-                        .eq("event_id", id)
-                        .order("created_at", { ascending: false }),
-                    supabase
-                        .from("event_audit")
-                        .select("*")
-                        .eq("event_id", id)
-                        .order("created_at", { ascending: false })
-                        .limit(100),
-                    supabase
-                        .from("rounds")
-                        .select("*")
-                        .eq("event_id", id)
-                        .order("number"),
-                ]);
+            try {
+                const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes, rRes] =
+                    await Promise.all([
+                        supabase.from("events").select("*").eq("id", id).single(),
+                        supabase
+                            .from("teams")
+                            .select("*")
+                            .eq("event_id", id)
+                            .order("created_at"),
+                        supabase
+                            .from("event_judges")
+                            .select("user_id, created_at")
+                            .eq("event_id", id),
+                        supabase
+                            .from("score_history")
+                            .select("*, teams(name)")
+                            .eq("event_id", id)
+                            .order("created_at", { ascending: true }),
+                        supabase
+                            .from("matches")
+                            .select("*")
+                            .eq("event_id", id)
+                            .order("round", { ascending: false })
+                            .order("position"),
+                        supabase
+                            .from("polls")
+                            .select("*")
+                            .eq("event_id", id)
+                            .order("created_at", { ascending: false }),
+                        supabase
+                            .from("event_audit")
+                            .select("*")
+                            .eq("event_id", id)
+                            .order("created_at", { ascending: false })
+                            .limit(100),
+                        supabase
+                            .from("rounds")
+                            .select("*")
+                            .eq("event_id", id)
+                            .order("number"),
+                    ]);
 
-            // for each judge fetch their public.profile info
-            if (jRes.data) {
-                const judgeDetails = await Promise.all(
-                    jRes.data.map(async (j) => {
-                        const { data: profileData } = await supabase
-                            .from("profiles")
-                            .select("display_name, avatar_url, email")
-                            .eq("id", j.user_id)
-                            .single();
-                        return {
-                            user_id: j.user_id,
-                            created_at: j.created_at,
-                            display_name: profileData?.display_name || null,
-                            avatar_url: profileData?.avatar_url || null,
-                            email: profileData?.email || null,
-                        };
-                    }),
-                );
-                jRes.data = judgeDetails;
-            }
-
-            setLoading(false);
-            if (eRes.error) {
-                setError("Event not found");
-                setEvent(null);
-                setTeams([]);
-                setJudges([]);
-                setAuditItems([]);
-                setMatches([]);
-                setPolls([]);
-                setPollOptions({});
-                return;
-            }
-            setEvent(eRes.data);
-            setTeams(tRes.data || []);
-            setJudges(jRes.data || []);
-            setRounds(rRes.data || []);
-            setScoreHistory(aRes.data || []);
-            const scoreItems = (aRes.data || []).map((x) => ({
-                ...x,
-                kind: "score",
-            }));
-            const auditItems = (auditRes.data || []).map((x) => ({
-                ...x,
-                kind: "event",
-            }));
-            const mergedAudit = [...scoreItems, ...auditItems]
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                .slice(0, 200);
-            setAuditItems(mergedAudit);
-            setMatches(mRes.data || []);
-            setPolls(pRes.data || []);
-            if (mRes.data && mRes.data.length > 0) {
-                setBracketType(mRes.data[0].bracket_type || "single_elim");
-            }
-
-            // Fetch options for each poll
-            if (pRes.data && pRes.data.length > 0) {
-                const optionsMap = {};
-                for (const poll of pRes.data) {
-                    const { data: opts } = await supabase
-                        .from("poll_options")
-                        .select("*")
-                        .eq("poll_id", poll.id)
-                        .order("display_order");
-                    optionsMap[poll.id] = opts || [];
+                // for each judge fetch their public.profile info
+                if (jRes.data) {
+                    const judgeDetails = await Promise.all(
+                        jRes.data.map(async (j) => {
+                            const { data: profileData } = await supabase
+                                .from("profiles")
+                                .select("display_name, avatar_url, email")
+                                .eq("id", j.user_id)
+                                .single();
+                            return {
+                                user_id: j.user_id,
+                                created_at: j.created_at,
+                                display_name: profileData?.display_name || null,
+                                avatar_url: profileData?.avatar_url || null,
+                                email: profileData?.email || null,
+                            };
+                        }),
+                    );
+                    jRes.data = judgeDetails;
                 }
-                setPollOptions(optionsMap);
-            } else {
-                setPollOptions({});
-            }
 
-            setError("");
+                if (eRes.error) {
+                    setError("Event not found");
+                    setEvent(null);
+                    setTeams([]);
+                    setJudges([]);
+                    setAuditItems([]);
+                    setMatches([]);
+                    setPolls([]);
+                    setPollOptions({});
+                    return;
+                }
+                setEvent(eRes.data);
+                setTeams(tRes.data || []);
+                setJudges(jRes.data || []);
+                setRounds(rRes.data || []);
+                setScoreHistory(aRes.data || []);
+                const scoreItems = (aRes.data || []).map((x) => ({
+                    ...x,
+                    kind: "score",
+                }));
+                const auditItems = (auditRes.data || []).map((x) => ({
+                    ...x,
+                    kind: "event",
+                }));
+                const mergedAudit = [...scoreItems, ...auditItems]
+                    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                    .slice(0, 200);
+                setAuditItems(mergedAudit);
+                setMatches(mRes.data || []);
+                setPolls(pRes.data || []);
+                if (mRes.data && mRes.data.length > 0) {
+                    setBracketType(mRes.data[0].bracket_type || "single_elim");
+                }
+
+                // Fetch options for each poll
+                if (pRes.data && pRes.data.length > 0) {
+                    const optionsMap = {};
+                    for (const poll of pRes.data) {
+                        const { data: opts } = await supabase
+                            .from("poll_options")
+                            .select("*")
+                            .eq("poll_id", poll.id)
+                            .order("display_order");
+                        optionsMap[poll.id] = opts || [];
+                    }
+                    setPollOptions(optionsMap);
+                } else {
+                    setPollOptions({});
+                }
+
+                setError("");
+            } catch (err) {
+                console.error("Error fetching event data:", err);
+                setError("Failed to load event data");
+            } finally {
+                setLoading(false);
+            }
         },
         [id],
     );
@@ -1100,7 +1106,7 @@ export default function EventPage() {
                                         {event?.visibility}
                                     </Chip>
                                 </div>
-                                <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-linear-to-r from-foreground to-default-500 mb-2">
+                                <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-linear-to-r from-foreground to-default-500 p-2">
                                     {event?.name}
                                 </h1>
                             </div>
@@ -1149,7 +1155,7 @@ export default function EventPage() {
                                         event={event}
                                         eventId={id}
                                         onStatusChange={() => fetch()}
-                                        variant="bordered"
+                                        variant="flat"
                                     />
 
                                     <Dropdown>
@@ -1231,7 +1237,8 @@ export default function EventPage() {
                             ) : null}
 
                             <Button
-                                variant="light"
+                                variant="flat"
+                                color="success"
                                 startContent={<Share2 size={16} />}
                                 onPress={() => {
                                     const url = `${window.location.origin}/events/${id}`;
@@ -1325,7 +1332,7 @@ export default function EventPage() {
                                     </div>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div className="space-y-4">
+                                        <div className="p-6 bg-content2/50  border border-default-200/50 space-y-4">
                                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                                 <Info size={18} /> About Event
                                             </h3>

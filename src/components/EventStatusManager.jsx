@@ -68,7 +68,7 @@ export default function EventStatusManager({
     event,
     onStatusChange,
     variant = "flat",
-    size = "sm",
+    size = "md",
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
