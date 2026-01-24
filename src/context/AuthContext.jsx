@@ -9,56 +9,62 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = useCallback(async (uid) => {
-    if (!uid) {
-      setProfile(null);
-      return;
-    }
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, role, display_name, avatar_url')
-      .eq('id', uid)
-      .single();
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // no rows: ensure profile exists (trigger may not have run)
-        await supabase.from('profiles').upsert(
-          { id: uid, role: 'viewer' },
-          { onConflict: 'id' }
-        );
-        const { data: d } = await supabase.from('profiles').select('id, role, display_name, avatar_url').eq('id', uid).single();
-        setProfile(d || null);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, role, display_name, avatar_url')
+        .eq('id', uid)
+        .single();
+
+      if (error && error.code === 'PGRST116') {
+        // Fallback: Create profile if missing
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .upsert({ id: uid, role: 'viewer' })
+          .select()
+          .single();
+        setProfile(newProfile);
       } else {
-        setProfile(null);
+        setProfile(data);
       }
-      return;
+    } catch (err) {
+      console.error("Profile fetch error:", err);
     }
-    setProfile(data);
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const initializeAuth = async () => {
+      // 1. Get initial session
+      const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
-      if (session?.user?.id) {
-        fetchProfile(session.user.id);
-      } else {
-        setProfile(null);
-      }
-      setLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user?.id) {
+      
+      if (session?.user) {
         await fetchProfile(session.user.id);
-      } else {
-        setProfile(null);
       }
-      setLoading(false);
-    });
+      
+      setLoading(false); // Only stop loading after profile check
 
-    return () => subscription.unsubscribe();
+      // 2. Listen for changes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        
+        if (currentUser) {
+          await fetchProfile(currentUser.id);
+        } else {
+          setProfile(null);
+        }
+        
+        setLoading(false);
+      });
+
+      return subscription;
+    };
+
+    const authSub = initializeAuth();
+    return () => {
+      authSub.then(sub => sub?.unsubscribe());
+    };
   }, [fetchProfile]);
 
   const signOut = useCallback(async () => {
