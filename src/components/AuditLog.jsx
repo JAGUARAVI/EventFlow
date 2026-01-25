@@ -121,7 +121,7 @@ export default function AuditLog({ items = [], currentUserId, onUndo }) {
                 </TableCell>
                 {onUndo && (
                   <TableCell>
-                    {r.kind === "score" && !r.undo_id && (
+                    {r.kind === "score" && r.undo_id !== "undone" && (
                       <Tooltip content="Undo this change">
                         <Button
                           isIconOnly
