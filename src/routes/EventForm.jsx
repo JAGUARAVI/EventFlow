@@ -18,7 +18,7 @@ const VISIBILITY = [
 export default function EventForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const isEdit = Boolean(id);
 
   const [name, setName] = useState('');
@@ -34,7 +34,12 @@ export default function EventForm() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!isEdit) return;
+    // Wait for auth to finish loading before fetching event
+    if (authLoading) return;
+    if (!isEdit) {
+      setFetchLoading(false);
+      return;
+    }
     (async () => {
       const { data, error: e } = await supabase.from('events').select('*').eq('id', id).single();
       setFetchLoading(false);
@@ -66,7 +71,7 @@ export default function EventForm() {
       setHideTimeline(settings.hide_timeline || false);
       setHideJudges(settings.hide_judges || false);
     })();
-  }, [id, isEdit, user, profile?.role, navigate]);
+  }, [id, isEdit, user, profile?.role, navigate, authLoading]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

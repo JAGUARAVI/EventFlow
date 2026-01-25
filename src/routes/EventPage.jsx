@@ -646,6 +646,75 @@ export default function EventPage() {
     addToast({ title: "Bracket regenerated", severity: "success" });
   };
 
+  // Swiss bracket: Generate next round after current round is completed
+  const handleGenerateNextSwissRound = async () => {
+    if (!teams || teams.length === 0) {
+      addToast({
+        title: "No teams",
+        description: "Add teams first",
+        severity: "warning",
+      });
+      return;
+    }
+
+    // Determine current round number (highest round in matches)
+    const currentRound = Math.max(...matches.map((m) => m.round), -1);
+    
+    // Check if all matches in current round are completed
+    const currentRoundMatches = matches.filter((m) => m.round === currentRound);
+    const allCompleted = currentRoundMatches.every((m) => m.status === "completed");
+    
+    if (!allCompleted) {
+      addToast({
+        title: "Round not complete",
+        description: "Complete all matches in the current round first",
+        severity: "warning",
+      });
+      return;
+    }
+
+    setGeneratingBracket(true);
+    
+    // Generate next round with all existing matches for record calculation
+    const nextRound = currentRound + 1;
+    const generated = generateSwiss(id, teams, nextRound, matches);
+    
+    if (generated.length === 0) {
+      setGeneratingBracket(false);
+      addToast({
+        title: "Cannot generate round",
+        description: "Not enough teams to pair for the next round",
+        severity: "warning",
+      });
+      return;
+    }
+    
+    const { error: e } = await supabase.from("matches").insert(generated);
+    setGeneratingBracket(false);
+    
+    if (e) {
+      addToast({
+        title: "Generation failed",
+        description: e.message,
+        severity: "danger",
+      });
+      return;
+    }
+    
+    notifyBracketInclusion(generated);
+    await supabase.from("event_audit").insert({
+      event_id: id,
+      action: "bracket.swiss_round",
+      entity_type: "bracket",
+      message: `Generated Swiss round ${nextRound + 1}`,
+      created_by: user?.id,
+      metadata: { bracket_type: "swiss", round: nextRound },
+    });
+    
+    fetch();
+    addToast({ title: `Swiss round ${nextRound + 1} generated`, severity: "success" });
+  };
+
   const handleEditMatch = (match) => {
     setSelectedMatch(match);
     onMatchOpen();
@@ -2001,6 +2070,25 @@ export default function EventPage() {
                               Regenerate
                             </Button>
                           )}
+                          
+                          {/* Swiss: Generate Next Round button */}
+                          {matches.length > 0 && bracketType === "swiss" && (() => {
+                            const currentRound = Math.max(...matches.map((m) => m.round), -1);
+                            const currentRoundMatches = matches.filter((m) => m.round === currentRound);
+                            const allCompleted = currentRoundMatches.length > 0 && currentRoundMatches.every((m) => m.status === "completed");
+                            return allCompleted ? (
+                              <Button
+                                size="sm"
+                                color="success"
+                                isLoading={generatingBracket}
+                                isDisabled={isCompleted}
+                                onPress={handleGenerateNextSwissRound}
+                                startContent={<Plus size={16} />}
+                              >
+                                Round {currentRound + 2}
+                              </Button>
+                            ) : null;
+                          })()}
                         </div>
                       )}
                     </div>

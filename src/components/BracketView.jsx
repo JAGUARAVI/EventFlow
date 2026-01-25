@@ -15,7 +15,7 @@ export default function BracketView({ matches, teams, bracketType = 'single_elim
   }
 
   if (bracketType === 'round_robin' || bracketType === 'swiss') {
-    return <BracketViewList matches={matches} teams={teams} canEdit={canEdit} onEditMatch={onEditMatch} />;
+    return <BracketViewList matches={matches} teams={teams} canEdit={canEdit} onEditMatch={onEditMatch} bracketType={bracketType} />;
   }
 
   // Single-elimination: group by round and display as columns
@@ -162,44 +162,108 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
 }
 
 /**
- * BracketViewList: Displays round-robin or Swiss matches as a simple list.
+ * BracketViewList: Displays round-robin or Swiss matches.
+ * For Swiss, groups matches by round number.
  */
-function BracketViewList({ matches, teams, canEdit, onEditMatch }) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-      {matches.map((match) => {
-        const teamA = teams.find((t) => t.id === match.team_a_id);
-        const teamB = teams.find((t) => t.id === match.team_b_id);
-        const isCompleted = match.status === 'completed';
-        const teamAWon = match.winner_id === match.team_a_id;
-        const teamBWon = match.winner_id === match.team_b_id;
-        const canClick = canEdit && typeof onEditMatch === 'function';
-
-        return (
-          <motion.div
-            key={match.id}
-            layout
-            whileHover={{ scale: 1.01 }}
-            className={`
-              border rounded-xl p-0 overflow-hidden bg-content1
-              ${isCompleted ? 'border-default-200' : match.status === 'live' ? 'border-primary shadow-md' : 'border-default-100'}
-              ${canClick ? 'cursor-pointer hover:border-primary/50' : ''}
-            `}
-            onClick={canClick ? () => onEditMatch?.(match) : undefined}
-          >
-            <div className="flex flex-col divide-y divide-default-100">
-              <div className={`flex justify-between p-3 ${teamAWon ? 'bg-success/5 font-bold' : ''}`}>
-               <span className="text-sm truncate">{teamA?.name || 'TBD'}</span>
-               <span className="font-mono text-sm">{match.team_a_score ?? '-'}</span>
+function BracketViewList({ matches, teams, canEdit, onEditMatch, bracketType }) {
+  // For Swiss, group by round
+  if (bracketType === 'swiss') {
+    const roundMap = {};
+    matches.forEach((m) => {
+      const round = m.round ?? 0;
+      if (!roundMap[round]) roundMap[round] = [];
+      roundMap[round].push(m);
+    });
+    
+    const rounds = Object.keys(roundMap).map(Number).sort((a, b) => a - b);
+    
+    return (
+      <div className="space-y-8">
+        {rounds.map((roundNum) => {
+          const roundMatches = roundMap[roundNum];
+          const allCompleted = roundMatches.every((m) => m.status === 'completed');
+          const anyLive = roundMatches.some((m) => m.status === 'live');
+          
+          return (
+            <div key={roundNum} className="space-y-3">
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-bold text-default-500 uppercase tracking-wider">
+                  Round {roundNum + 1}
+                </h3>
+                <Chip 
+                  size="sm" 
+                  variant="flat" 
+                  color={allCompleted ? 'success' : anyLive ? 'primary' : 'default'}
+                >
+                  {allCompleted ? 'Complete' : anyLive ? 'In Progress' : 'Pending'}
+                </Chip>
               </div>
-              <div className={`flex justify-between p-3 ${teamBWon ? 'bg-success/5 font-bold' : ''}`}>
-               <span className="text-sm truncate">{teamB?.name || 'TBD'}</span>
-               <span className="font-mono text-sm">{match.team_b_score ?? '-'}</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {roundMatches.map((match) => (
+                  <MatchCard 
+                    key={match.id} 
+                    match={match} 
+                    teams={teams} 
+                    canEdit={canEdit} 
+                    onEditMatch={onEditMatch} 
+                  />
+                ))}
               </div>
             </div>
-          </motion.div>
-        );
-      })}
+          );
+        })}
+      </div>
+    );
+  }
+  
+  // Round-robin: flat grid
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {matches.map((match) => (
+        <MatchCard 
+          key={match.id} 
+          match={match} 
+          teams={teams} 
+          canEdit={canEdit} 
+          onEditMatch={onEditMatch} 
+        />
+      ))}
     </div>
+  );
+}
+
+/**
+ * Simple match card component used by BracketViewList
+ */
+function MatchCard({ match, teams, canEdit, onEditMatch }) {
+  const teamA = teams.find((t) => t.id === match.team_a_id);
+  const teamB = teams.find((t) => t.id === match.team_b_id);
+  const isCompleted = match.status === 'completed';
+  const teamAWon = match.winner_id === match.team_a_id;
+  const teamBWon = match.winner_id === match.team_b_id;
+  const canClick = canEdit && typeof onEditMatch === 'function';
+
+  return (
+    <motion.div
+      layout
+      whileHover={{ scale: 1.01 }}
+      className={`
+        border rounded-xl p-0 overflow-hidden bg-content1
+        ${isCompleted ? 'border-default-200' : match.status === 'live' ? 'border-primary shadow-md' : 'border-default-100'}
+        ${canClick ? 'cursor-pointer hover:border-primary/50' : ''}
+      `}
+      onClick={canClick ? () => onEditMatch?.(match) : undefined}
+    >
+      <div className="flex flex-col divide-y divide-default-100">
+        <div className={`flex justify-between p-3 ${teamAWon ? 'bg-success/5 font-bold' : ''}`}>
+         <span className="text-sm truncate">{teamA?.name || 'TBD'}</span>
+         <span className="font-mono text-sm">{match.team_a_score ?? '-'}</span>
+        </div>
+        <div className={`flex justify-between p-3 ${teamBWon ? 'bg-success/5 font-bold' : ''}`}>
+         <span className="text-sm truncate">{teamB?.name || 'TBD'}</span>
+         <span className="font-mono text-sm">{match.team_b_score ?? '-'}</span>
+        </div>
+      </div>
+    </motion.div>
   );
 }

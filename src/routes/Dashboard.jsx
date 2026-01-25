@@ -24,7 +24,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
 export default function Dashboard() {
-    const { user, profile } = useAuth();
+    const { user, profile, loading: authLoading } = useAuth();
     const [events, setEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState(null);
@@ -35,6 +35,9 @@ export default function Dashboard() {
 
     // Keep HEAD Logic: useCallback wrapper for fetching
     const fetchDashboardData = useCallback(async (showLoading = true) => {
+        // Don't fetch if auth is still loading - wait for it to complete
+        if (authLoading) return;
+        
         if (!user?.id || !profile?.role) {
             setLoading(false);
             return;
@@ -115,7 +118,7 @@ export default function Dashboard() {
         } finally {
             setLoading(false);
         }
-    }, [user?.id, profile?.role, isAdmin, isViewer]);
+    }, [user?.id, profile?.role, isAdmin, isViewer, authLoading]);
 
     useEffect(() => {
         fetchDashboardData(true);
