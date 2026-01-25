@@ -2,7 +2,7 @@
 -- Migration 18: Advanced admin features
 
 -- 1. Create themes table
-CREATE TABLE themes (
+CREATE TABLE themes  (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES profiles(id) ON DELETE CASCADE,
   event_id uuid REFERENCES events(id) ON DELETE CASCADE,

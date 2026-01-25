@@ -25,7 +25,9 @@ A live deployment of EventFlow can be visited [here!](https://eventflowiiit.netl
 - **Announcements:** A dedicated section for any announcements related to the event.
 - **Analytics:** A section to show a complete statistical analysis of the event's teams and participation. The data can be downloaded as a CSV.
 - **Audit Log:** An audit log which logs all the additions/removals/changes made to the event. Certain changes can also be undone through the audit log.
-
+- **Real Time Sync:** All changes made to the event are synced in real time across all clients without needing a page refresh.
+- **Role Based Access Control:** Different roles with different access levels can be created.
+- **Customizable Themes:** Multiple themes to choose from to customize the look and feel of the event page.
 # Usage
 1) Clone the git repository
 
@@ -45,8 +47,9 @@ npm install
 VITE_SUPABASE_URL=[SUPABASE URL]
 VITE_SUPABASE_PUBLIC_KEY=[SUPABASE PUBLIC KEY]
 ```
+4) Create the necessary tables in Supabase. The SQL script to create the necessary tables can be found in the `/supabase` directory.
 
-4) Run the development server
+5) Run the development server
 
 ```
 npm run dev
