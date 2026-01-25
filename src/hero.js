@@ -4,7 +4,6 @@ import { heroui } from "@heroui/react";
 export default heroui({
     themes: {
         "sunset-light": {
-            extend: "light",
             colors: {
                 default: {
                     50: "#f9f6fa",
@@ -113,7 +112,6 @@ export default heroui({
             },
         },
         sunset: {
-            extends: "dark",
             colors: {
                 default: {
                     50: "#2d1436",

@@ -17,10 +17,10 @@ export default function Landing() {
     }
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen">
             {/* Hero Section */}
             <div className="relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-sunset-blue/20 via-background to-sunset-purple/20 dark:from-sunset-blue/10 dark:to-sunset-purple/10 -z-10" />
+                <div className="absolute inset-0 bg-gradient-to-br from-sunset-blue/20 via-transparent to-sunset-purple/20 dark:from-sunset-blue/10 dark:to-sunset-purple/10 -z-10" />
 
                 <div className="max-w-6xl mx-auto px-6 pt-24 pb-20">
                     <div className="flex flex-col items-center text-center gap-8 max-w-4xl mx-auto">
