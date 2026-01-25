@@ -27,7 +27,7 @@ export default function Login() {
     } = useAuth();
     const navigate = useNavigate();
     const [password, setPassword] = useState("");
-    const [mode, setMode] = useState("signin"); // or 'signup'
+    const [mode, setMode] = useState("signin"); // 'signin', 'signup', 'forgot_password'
 
     const onEmailSubmit = async (e) => {
         e.preventDefault();
@@ -40,6 +40,24 @@ export default function Login() {
             return;
         }
         setEmailSent(true);
+    };
+
+    const onForgotPasswordSubmit = async (e) => {
+        e.preventDefault();
+        setError("");
+        setLoading(true);
+        const { error: err } = await supabase.auth.resetPasswordForEmail(
+            email.trim(),
+            {
+                redirectTo: `${window.location.origin}/profile`,
+            },
+        );
+        setLoading(false);
+        if (err) {
+            setError(err.message);
+            return;
+        }
+        setEmailSent(true); // Reuse this state to show success message
     };
 
     const onPhoneSubmit = async (e) => {
@@ -76,6 +94,24 @@ export default function Login() {
         navigate("/");
     };
 
+    const renderHeader = () => {
+        if (mode === "forgot_password") {
+            return {
+                title: "Reset Password",
+                subtitle: "Enter your email to receive recovery instructions",
+            };
+        }
+        return {
+            title: mode === "signin" ? "Welcome Back" : "Create Account",
+            subtitle:
+                mode === "signin"
+                    ? "Sign in to access your dashboard"
+                    : "Join EventFlow to manage your events",
+        };
+    };
+
+    const header = renderHeader();
+
     return (
         <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-sunset-blue/10 via-background to-sunset-purple/10">
             <Card className="w-full max-w-md shadow-2xl border-none bg-white/80 dark:bg-default-100/80 backdrop-blur-xl">
@@ -84,12 +120,10 @@ export default function Login() {
                         E
                     </div>
                     <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-foreground to-default-500">
-                        {mode === "signin" ? "Welcome Back" : "Create Account"}
+                        {header.title}
                     </h1>
                     <p className="text-sm text-default-500">
-                        {mode === "signin"
-                            ? "Sign in to access your dashboard"
-                            : "Join EventFlow to manage your events"}
+                        {header.subtitle}
                     </p>
                 </CardHeader>
 
@@ -100,13 +134,76 @@ export default function Login() {
                         </div>
                     )}
 
-                    <Tabs
-                        aria-label="Login method"
-                        fullWidth
-                        className="mb-6"
-                        color="primary"
-                        variant="solid"
-                    >
+                    {mode === "forgot_password" ? (
+                        emailSent ? (
+                            <div className="text-center space-y-4">
+                                <div className="p-4 bg-success/10 text-success rounded-xl flex flex-col items-center justify-center gap-2">
+                                    <Mail size={32} />
+                                    <p className="font-semibold">
+                                        Check your email
+                                    </p>
+                                </div>
+                                <p className="text-sm text-default-500">
+                                    We've sent a password reset link to{" "}
+                                    <strong>{email}</strong>
+                                </p>
+                                <Button
+                                    variant="flat"
+                                    onPress={() => {
+                                        setMode("signin");
+                                        setEmailSent(false);
+                                    }}
+                                    fullWidth
+                                >
+                                    Back to Sign In
+                                </Button>
+                            </div>
+                        ) : (
+                            <form
+                                onSubmit={onForgotPasswordSubmit}
+                                className="space-y-4"
+                            >
+                                <Input
+                                    label="Email Address"
+                                    placeholder="Enter your email"
+                                    value={email}
+                                    onValueChange={setEmail}
+                                    startContent={
+                                        <Mail className="text-default-400" />
+                                    }
+                                    variant="bordered"
+                                    isRequired
+                                    type="email"
+                                />
+                                <Button
+                                    color="primary"
+                                    type="submit"
+                                    isLoading={loading}
+                                    fullWidth
+                                    className="bg-gradient-to-r from-sunset-blue to-sunset-purple shadow-lg shadow-sunset-purple/20"
+                                >
+                                    Send Reset Link
+                                </Button>
+                                <Button
+                                    variant="light"
+                                    onPress={() => setMode("signin")}
+                                    fullWidth
+                                >
+                                    Cancel
+                                </Button>
+                            </form>
+                        )
+                    ) : (
+                        <Tabs
+                            aria-label="Login options"
+                            className="bg-transparent"
+                            classNames={{
+                                tabList: "bg-default-100/50 p-1 w-full",
+                                cursor: "bg-background shadow-sm",
+                                tab: "h-9",
+                                panel: "pt-4",
+                            }}
+                        >
                         <Tab key="password" title="Email & Password">
                             <form
                                 onSubmit={onEmailPasswordSubmit}
@@ -137,6 +234,18 @@ export default function Login() {
                                     }
                                     variant="bordered"
                                 />
+
+                                <div className="flex justify-end">
+                                    <button
+                                        type="button"
+                                        className="text-xs text-primary hover:underline outline-none"
+                                        onClick={() =>
+                                            setMode("forgot_password")
+                                        }
+                                    >
+                                        Forgot password?
+                                    </button>
+                                </div>
 
                                 <Button
                                     type="submit"
@@ -291,6 +400,7 @@ export default function Login() {
                             )}
                         </Tab>
                     </Tabs>
+                    )}
                 </CardBody>
             </Card>
 
