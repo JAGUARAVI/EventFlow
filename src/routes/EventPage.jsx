@@ -1828,11 +1828,9 @@ export default function EventPage() {
                                                                 <div
                                                                     className="flex-1 cursor-pointer"
                                                                     onClick={() =>
-                                                                        canManage
-                                                                            ? toggleTeamExpansion(
-                                                                                  t.id,
-                                                                              )
-                                                                            : {}
+                                                                        toggleTeamExpansion(
+                                                                            t.id,
+                                                                        )
                                                                     }
                                                                 >
                                                                     <div className="flex items-center justify-between mb-1">
@@ -1841,14 +1839,12 @@ export default function EventPage() {
                                                                                 t.name
                                                                             }
                                                                         </h4>
-                                                                        {canManage && (
-                                                                            <ChevronDown
-                                                                                size={
-                                                                                    16
-                                                                                }
-                                                                                className={`text-default-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                                                                            />
-                                                                        )}
+                                                                        <ChevronDown
+                                                                            size={
+                                                                                16
+                                                                            }
+                                                                            className={`text-default-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                                                        />
                                                                     </div>
                                                                     {t.description && (
                                                                         <p className="text-sm text-default-500 line-clamp-2">
