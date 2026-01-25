@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Card,
   CardBody,
@@ -29,6 +29,13 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  
+  const userIdRef = useRef(user?.id);
+  const channelRef = useRef(null);
+
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
 
   const fetchProfile = async (userId) => {
     const { data } = await supabase
@@ -56,9 +63,13 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
         async (payload) => {
           if (payload.eventType === 'INSERT') {
             const author = await fetchProfile(payload.new.created_by);
-            setAnnouncements((prev) => [{ ...payload.new, author }, ...prev]);
+            setAnnouncements((prev) => {
+              // Avoid duplicates
+              if (prev.some(a => a.id === payload.new.id)) return prev;
+              return [{ ...payload.new, author }, ...prev];
+            });
 
-            if (payload.new.created_by !== user?.id) {
+            if (payload.new.created_by !== userIdRef.current) {
               playNotificationSound('announcement.wav');
               sendPushNotification({
                 title: 'New Announcement',
@@ -90,12 +101,21 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Announcements channel error:', err);
+        }
+      });
+
+    channelRef.current = channel;
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
-  }, [eventId, user?.id]);
+  }, [eventId]); // Removed user?.id dependency - use ref instead
 
   const loadAnnouncements = async () => {
     try {

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button, Slider, addToast, Modal, ModalContent, ModalBody, ModalHeader, useDisclosure, Image } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { X, Plus, GripVertical, Maximize2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, withRetry } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
 export default function PollVote({ poll, options, onVoted, showQuestion = true }) {
@@ -117,43 +117,50 @@ export default function PollVote({ poll, options, onVoted, showQuestion = true }
 
     setVoting(true);
 
-    // Delete existing votes to avoid conflict (or just in case we allow revoting logic later)
-    // RLS might block delete if not creator? No, usually users can delete own data.
-    // Assuming policy: "Users can insert/delete their own votes"
-    const { error: deleteError } = await supabase
-      .from('votes')
-      .delete()
-      .match({ poll_id: poll.id, user_id: user.id });
+    try {
+      // Delete existing votes to avoid conflict (or just in case we allow revoting logic later)
+      // RLS might block delete if not creator? No, usually users can delete own data.
+      // Assuming policy: "Users can insert/delete their own votes"
+      const { error: deleteError } = await withRetry(() =>
+        supabase
+          .from('votes')
+          .delete()
+          .match({ poll_id: poll.id, user_id: user.id })
+      );
 
-    if (deleteError) {
-      console.warn('Error clearing previous votes:', deleteError);
-    }
-
-    // Insert new votes
-    const rows = votesPayload.map((v) => ({
-      poll_id: poll.id,
-      user_id: user.id,
-      option_id: v.option_id,
-      rank: v.rank || 1,
-      value: v.value || 0, // ensure value is set
-    }));
-
-    const { error } = await supabase.from('votes').insert(rows);
-    setVoting(false);
-
-    if (error) {
-      if (error.code === '23505') {
-        addToast({ title: 'Already voted', severity: 'info' });
-        setHasVoted(true);
-      } else {
-        addToast({ title: 'Vote failed', description: error.message, severity: 'danger' });
+      if (deleteError) {
+        console.warn('Error clearing previous votes:', deleteError);
       }
-      return;
-    }
 
-    setHasVoted(true);
-    addToast({ title: 'Vote recorded', severity: 'success' });
-    onVoted?.();
+      // Insert new votes
+      const rows = votesPayload.map((v) => ({
+        poll_id: poll.id,
+        user_id: user.id,
+        option_id: v.option_id,
+        rank: v.rank || 1,
+        value: v.value || 0, // ensure value is set
+      }));
+
+      const { error } = await withRetry(() =>
+        supabase.from('votes').insert(rows)
+      );
+
+      if (error) {
+        if (error.code === '23505') {
+          addToast({ title: 'Already voted', severity: 'info' });
+          setHasVoted(true);
+        } else {
+          addToast({ title: 'Vote failed', description: error.message, severity: 'danger' });
+        }
+        return;
+      }
+
+      setHasVoted(true);
+      addToast({ title: 'Vote recorded', severity: 'success' });
+      onVoted?.();
+    } finally {
+      setVoting(false);
+    }
   };
 
   if (poll?.status === 'closed') {

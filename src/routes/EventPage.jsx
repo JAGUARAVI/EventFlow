@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   useParams,
   Link,
@@ -65,7 +65,7 @@ import {
   Info,
   Activity,
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { supabase, withRetry } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 import { useRealtimeLeaderboard } from "../hooks/useRealtimeLeaderboard";
 import { useRealtimeBracket } from "../hooks/useRealtimeBracket";
@@ -95,7 +95,7 @@ import {
   generateSwiss,
   shuffleTeams,
 } from "../lib/bracket";
-import { useLiveVotes } from "../hooks/useLiveVotes";
+import { useEventVotes } from "../hooks/useEventVotes";
 import { useRealtimePolls } from "../hooks/useRealtimePolls";
 import { sendPushNotification } from "../lib/notifications";
 import { useTheme } from "../context/ThemeContext";
@@ -121,6 +121,16 @@ export default function EventPage() {
   const [generatingBracket, setGeneratingBracket] = useState(false);
   const [regeneratingBracket, setRegeneratingBracket] = useState(false);
   const [fixingBracket, setFixingBracket] = useState(false);
+  
+  // Track pending score changes per team to handle rapid updates correctly
+  // Maps teamId -> { pendingDelta: number, lastKnownScore: number }
+  const pendingScoreChangesRef = useRef(new Map());
+  
+  // Ref to track latest teams state for score changes (avoids stale closure issues)
+  const teamsRef = useRef(teams);
+  useEffect(() => {
+    teamsRef.current = teams;
+  }, [teams]);
 
   useEffect(() => {
     const eventTheme = event?.settings?.theme;
@@ -464,11 +474,15 @@ export default function EventPage() {
     });
   }, []);
 
-  useRealtimeBracket(id, setMatches, onMatchComplete, () => fetch(), {
+  useRealtimeBracket(id, setMatches, onMatchComplete, fetch, {
     currentUserId: user?.id,
     myTeamIds,
   });
   useRealtimePolls(id, setPolls, setPollOptions, { currentUserId: user?.id });
+  
+  // Single centralized hook for all poll votes - prevents channel exhaustion
+  const pollIds = useMemo(() => polls.map(p => p.id).filter(Boolean), [polls]);
+  const { getVotesForPoll } = useEventVotes(id, pollIds);
 
   const buildBracketMatches = (type) => {
     const shuffledTeams = shuffleTeams(teams);
@@ -575,9 +589,12 @@ export default function EventPage() {
     });
     await finalizeSingleElimBracket();
 
-    // Broadcast reload to force sync clients
+    // Broadcast reload to force sync clients - use existing channel pattern
     const channel = supabase.channel(`bracket:${id}`);
-    channel.send({ type: "broadcast", event: "reload", payload: {} });
+    await channel.subscribe();
+    await channel.send({ type: "broadcast", event: "reload", payload: {} });
+    // Clean up the broadcast channel after sending
+    await supabase.removeChannel(channel);
 
     fetch();
     addToast({ title: "Bracket regenerated", severity: "success" });
@@ -1062,28 +1079,70 @@ export default function EventPage() {
     addToast({ title: "Change undone", severity: "success" });
   };
 
-  const handleScoreChange = async (teamId, deltaVal) => {
-    const t = teams.find((x) => x.id === teamId);
-    if (!t || !user?.id) return;
-    const prev = Number(t.score) || 0;
+  const handleScoreChange = useCallback(async (teamId, deltaVal) => {
+    if (!user?.id) {
+      console.debug('[EventPage] handleScoreChange: No user, ignoring');
+      return;
+    }
+    
+    console.debug('[EventPage] handleScoreChange:', { teamId, deltaVal });
+    
+    // Track this pending change to handle rapid sequential updates
+    const pending = pendingScoreChangesRef.current.get(teamId) || { pendingDelta: 0 };
+    
+    // Get the base score (either from last known state or current teams)
+    const t = teamsRef.current.find((x) => x.id === teamId);
+    if (!t) {
+      console.debug('[EventPage] handleScoreChange: Team not found:', teamId);
+      return;
+    }
+    
+    // Calculate prev based on current displayed score (includes any pending optimistic updates)
+    const currentDisplayedScore = Number(t.score) || 0;
+    const prev = currentDisplayedScore;
     const next = prev + deltaVal;
-    setTeams((old) =>
-      old.map((x) => (x.id === teamId ? { ...x, score: next } : x)),
+    
+    console.debug('[EventPage] handleScoreChange: Score change', { prev, next, deltaVal });
+    
+    // Track this delta as pending
+    pending.pendingDelta += deltaVal;
+    pendingScoreChangesRef.current.set(teamId, pending);
+    
+    // Optimistic update - also update the ref immediately
+    setTeams((old) => {
+      const updated = old.map((x) => (x.id === teamId ? { ...x, score: next } : x));
+      teamsRef.current = updated; // Sync ref immediately
+      return updated;
+    });
+    
+    const { error: histErr } = await withRetry(() => 
+      supabase.from("score_history").insert([
+        {
+          event_id: id,
+          team_id: teamId,
+          points_before: prev,
+          points_after: next,
+          delta: deltaVal,
+          changed_by: user.id,
+        },
+      ])
     );
-    const { error: histErr } = await supabase.from("score_history").insert([
-      {
-        event_id: id,
-        team_id: teamId,
-        points_before: prev,
-        points_after: next,
-        delta: deltaVal,
-        changed_by: user.id,
-      },
-    ]);
+    
     if (histErr) {
-      setTeams((old) =>
-        old.map((x) => (x.id === teamId ? { ...x, score: prev } : x)),
-      );
+      console.error('[EventPage] handleScoreChange: history insert failed:', histErr);
+      // Rollback this specific delta
+      pending.pendingDelta -= deltaVal;
+      if (pending.pendingDelta === 0) {
+        pendingScoreChangesRef.current.delete(teamId);
+      } else {
+        pendingScoreChangesRef.current.set(teamId, pending);
+      }
+      
+      setTeams((old) => {
+        const updated = old.map((x) => (x.id === teamId ? { ...x, score: x.score - deltaVal } : x));
+        teamsRef.current = updated;
+        return updated;
+      });
       addToast({
         title: "Score update failed",
         description: histErr.message,
@@ -1091,21 +1150,39 @@ export default function EventPage() {
       });
       return;
     }
-    const { error: e } = await supabase
-      .from("teams")
-      .update({ score: next })
-      .eq("id", teamId);
+    
+    const { error: e } = await withRetry(() =>
+      supabase
+        .from("teams")
+        .update({ score: next })
+        .eq("id", teamId)
+    );
+      
+    // Clear this delta from pending (whether success or fail, DB has the truth now)
+    pending.pendingDelta -= deltaVal;
+    if (pending.pendingDelta === 0) {
+      pendingScoreChangesRef.current.delete(teamId);
+    } else {
+      pendingScoreChangesRef.current.set(teamId, pending);
+    }
+    
     if (e) {
-      setTeams((old) =>
-        old.map((x) => (x.id === teamId ? { ...x, score: prev } : x)),
-      );
+      console.error('[EventPage] handleScoreChange: team update failed:', e);
+      // Rollback this specific delta
+      setTeams((old) => {
+        const updated = old.map((x) => (x.id === teamId ? { ...x, score: x.score - deltaVal } : x));
+        teamsRef.current = updated;
+        return updated;
+      });
       addToast({
         title: "Score update failed",
         description: e.message,
         severity: "danger",
       });
+    } else {
+      console.debug('[EventPage] handleScoreChange: Success');
     }
-  };
+  }, [id, user?.id]);
 
   const teamColumns = [
     <TableColumn key="name">NAME</TableColumn>,
@@ -2278,6 +2355,7 @@ export default function EventPage() {
                                     </h4>
                                     <PollResultsLive
                                       pollId={poll.id}
+                                      votes={getVotesForPoll(poll.id)}
                                       options={pollOptions[poll.id] || []}
                                       isLive={poll.status === "open"}
                                       pollType={poll.poll_type}
@@ -2518,13 +2596,14 @@ export default function EventPage() {
 
 function PollResultsLive({
   pollId,
+  votes,
   options,
   isLive,
   pollType,
   resultsHidden,
   canManage,
 }) {
-  const votes = useLiveVotes(pollId);
+  // votes are now passed in from the centralized useEventVotes hook
   return (
     <PollResults
       options={options}

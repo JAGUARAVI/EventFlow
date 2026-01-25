@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Select, SelectItem, addToast } from '@heroui/react';
-import { supabase } from '../lib/supabase';
+import { supabase, withRetry } from '../lib/supabase';
 
 export default function MatchEditor({ isOpen, onClose, match, teams, onUpdate, onAudit }) {
   const [scoreA, setScoreA] = useState('0');
@@ -17,9 +17,22 @@ export default function MatchEditor({ isOpen, onClose, match, teams, onUpdate, o
       setStatus(match.status || 'pending');
     }
   }, [match, isOpen]);
+  
+  // Reset saving state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSaving(false);
+    }
+  }, [isOpen]);
 
   const handleSave = async () => {
     if (!match) return;
+    if (saving) {
+      console.debug('[MatchEditor] Save already in progress, ignoring');
+      return;
+    }
+    
+    console.debug('[MatchEditor] Starting save for match:', match.id);
     setSaving(true);
 
     const update = {
@@ -29,18 +42,41 @@ export default function MatchEditor({ isOpen, onClose, match, teams, onUpdate, o
       status,
     };
 
-    const { error } = await supabase.from('matches').update(update).eq('id', match.id);
-    setSaving(false);
+    try {
+      const { error } = await withRetry(() => 
+        supabase.from('matches').update(update).eq('id', match.id)
+      );
+      
+      if (error) {
+        console.error('[MatchEditor] Save error:', error);
+        addToast({ title: 'Save failed', description: error.message, severity: 'danger' });
+        return;
+      }
 
-    if (error) {
-      addToast({ title: 'Save failed', description: error.message, severity: 'danger' });
-      return;
+      console.debug('[MatchEditor] Save successful, calling callbacks');
+      
+      // Call callbacks but don't let their errors affect the save state
+      try {
+        onUpdate?.(match.id, update);
+      } catch (updateErr) {
+        console.error('[MatchEditor] onUpdate callback error:', updateErr);
+      }
+      
+      try {
+        onAudit?.(match, update);
+      } catch (auditErr) {
+        console.error('[MatchEditor] onAudit callback error:', auditErr);
+      }
+      
+      addToast({ title: 'Match updated', severity: 'success' });
+      onClose?.();
+    } catch (err) {
+      console.error('[MatchEditor] Unexpected save error:', err);
+      addToast({ title: 'Save failed', description: err.message || 'Unknown error', severity: 'danger' });
+    } finally {
+      console.debug('[MatchEditor] Resetting saving state');
+      setSaving(false);
     }
-
-    onUpdate?.(match.id, update);
-    onAudit?.(match, update);
-    addToast({ title: 'Match updated', severity: 'success' });
-    onClose?.();
   };
 
   if (!match) return null;

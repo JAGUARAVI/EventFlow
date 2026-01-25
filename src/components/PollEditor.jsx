@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Select, SelectItem, Switch, addToast } from '@heroui/react';
-import { supabase } from '../lib/supabase';
+import { supabase, withRetry } from '../lib/supabase';
 
 export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUpdate, currentUserId }) {
   const [question, setQuestion] = useState('');
@@ -23,6 +23,13 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
       setOptions([]);
     }
   }, [poll, isOpen]);
+
+  // Reset saving state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSaving(false);
+    }
+  }, [isOpen]);
 
   const fetchOptions = async () => {
     if (!poll?.id) return;
@@ -53,12 +60,17 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
       addToast({ title: 'Add at least one option', severity: 'warning' });
       return;
     }
+    if (saving) return; // Prevent double submission
     setSaving(true);
 
     try {
       if (poll?.id) {
         // Update existing poll
-        await supabase.from('polls').update({ question, poll_type: pollType, results_hidden: resultsHidden }).eq('id', poll.id);
+        const { error: pollErr } = await withRetry(() => 
+          supabase.from('polls').update({ question, poll_type: pollType, results_hidden: resultsHidden }).eq('id', poll.id)
+        );
+        if (pollErr) throw pollErr;
+        
         await supabase.from('event_audit').insert({
           event_id: eventId,
           action: 'poll.edit',
@@ -71,29 +83,35 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
         for (let i = 0; i < options.length; i++) {
           const opt = options[i];
           if (opt.id) {
-            await supabase.from('poll_options').update({ 
-              label: opt.label, 
-              points: opt.points, 
-              image_url: opt.image_url,
-              display_order: i 
-            }).eq('id', opt.id);
+            await withRetry(() => 
+              supabase.from('poll_options').update({ 
+                label: opt.label, 
+                points: opt.points, 
+                image_url: opt.image_url,
+                display_order: i 
+              }).eq('id', opt.id)
+            );
           } else {
-            await supabase.from('poll_options').insert({ 
-              poll_id: poll.id, 
-              label: opt.label, 
-              points: opt.points, 
-              image_url: opt.image_url,
-              display_order: i 
-            });
+            await withRetry(() =>
+              supabase.from('poll_options').insert({ 
+                poll_id: poll.id, 
+                label: opt.label, 
+                points: opt.points, 
+                image_url: opt.image_url,
+                display_order: i 
+              })
+            );
           }
         }
       } else {
         // Create new poll
-        const { data: newPoll, error: pollErr } = await supabase
-          .from('polls')
-          .insert({ event_id: eventId, question, poll_type: pollType, results_hidden: resultsHidden })
-          .select()
-          .single();
+        const { data: newPoll, error: pollErr } = await withRetry(() =>
+          supabase
+            .from('polls')
+            .insert({ event_id: eventId, question, poll_type: pollType, results_hidden: resultsHidden })
+            .select()
+            .single()
+        );
         if (pollErr) throw pollErr;
 
         // Insert options
@@ -105,7 +123,9 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
           team_id: opt.team_id,
           display_order: i,
         }));
-        const { error: optErr } = await supabase.from('poll_options').insert(optionsToInsert);
+        const { error: optErr } = await withRetry(() => 
+          supabase.from('poll_options').insert(optionsToInsert)
+        );
         if (optErr) throw optErr;
         await supabase.from('event_audit').insert({
           event_id: eventId,
@@ -117,13 +137,13 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
         });
       }
 
-      setSaving(false);
       onUpdate?.();
       addToast({ title: 'Poll saved', severity: 'success' });
       onClose?.();
     } catch (err) {
-      setSaving(false);
       addToast({ title: 'Save failed', description: err.message, severity: 'danger' });
+    } finally {
+      setSaving(false);
     }
   };
 

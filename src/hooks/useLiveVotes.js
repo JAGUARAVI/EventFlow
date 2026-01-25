@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
  */
 export function useLiveVotes(pollId) {
   const [votes, setVotes] = useState([]);
+  const channelRef = useRef(null);
 
   useEffect(() => {
     if (!pollId) return;
@@ -19,27 +20,51 @@ export function useLiveVotes(pollId) {
       .eq('poll_id', pollId)
       .then(({ data }) => setVotes(data || []));
 
-    // Subscribe to new votes
-    const channel = supabase
-      .channel(`votes:${pollId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'votes', filter: `poll_id=eq.${pollId}` },
-        (payload) => {
-          setVotes((prev) => [...prev, payload.new]);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'votes', filter: `poll_id=eq.${pollId}` },
-        (payload) => {
-          setVotes((prev) => prev.filter((v) => v.id !== payload.old.id));
-        }
-      )
-      .subscribe();
+    const setupChannel = () => {
+      // Subscribe to new votes
+      const channel = supabase
+        .channel(`votes:${pollId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'votes', filter: `poll_id=eq.${pollId}` },
+          (payload) => {
+            setVotes((prev) => {
+              // Avoid duplicates
+              if (prev.some(v => v.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'votes', filter: `poll_id=eq.${pollId}` },
+          (payload) => {
+            setVotes((prev) => prev.filter((v) => v.id !== payload.old.id));
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('Votes channel error:', err);
+            // Attempt to reconnect after a delay
+            setTimeout(() => {
+              if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+              }
+              channelRef.current = setupChannel();
+            }, 2000);
+          }
+        });
+
+      return channel;
+    };
+
+    channelRef.current = setupChannel();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [pollId]);
 
