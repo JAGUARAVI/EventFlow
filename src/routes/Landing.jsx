@@ -12,9 +12,9 @@ export default function Landing() {
             </div>
         );
     }
-    if (user) {
-        return <Navigate to="/dashboard" replace />;
-    }
+    // if (user) {
+    //     return <Navigate to="/dashboard" replace />;
+    // }
 
     return (
         <div className="min-h-screen">
@@ -48,6 +48,7 @@ export default function Landing() {
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-4 justify-center w-full sm:w-auto animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200">
+                            {!user ? (
                             <Button
                                 as={Link}
                                 to="/login"
@@ -58,15 +59,19 @@ export default function Landing() {
                             >
                                 Get Started
                             </Button>
+                            ) : (
                             <Button
                                 as={Link}
                                 to="/dashboard"
                                 size="lg"
-                                variant="bordered"
-                                className="font-medium"
+                                color="primary"
+                                className="font-semibold shadow-lg shadow-sunset-blue/20"
+                                variant="ghost"
+                                endContent={<ArrowRight className="w-4 h-4" />}
                             >
                                 View Dashboard
                             </Button>
+                            )}
                         </div>
                     </div>
 
