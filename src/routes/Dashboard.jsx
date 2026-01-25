@@ -52,7 +52,7 @@ export default function Dashboard() {
                     ? baseEventsQuery
                     : isViewer
                         ? baseEventsQuery.eq("visibility", "public")
-                        : baseEventsQuery.eq("created_by", user.id),
+                        : baseEventsQuery.or(`created_by.eq.${user.id},visibility.eq.public`),
                 supabase
                     .from("event_judges")
                     .select("event_id")

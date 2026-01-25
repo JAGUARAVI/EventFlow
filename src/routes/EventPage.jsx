@@ -140,6 +140,7 @@ export default function EventPage() {
     } = useDisclosure();
     const [teamName, setTeamName] = useState("");
     const [teamMetadata, setTeamMetadata] = useState({});
+    const [isMetadataValid, setIsMetadataValid] = useState(true);
     const [teamSaving, setTeamSaving] = useState(false);
     const [editingTeam, setEditingTeam] = useState(null);
     const [changingRegistrationStatus, setChangingRegistrationStatus] =
@@ -200,6 +201,7 @@ export default function EventPage() {
     const canManage =
         event &&
         (isAdmin || (event.created_by === user?.id && role !== "viewer"));
+    const isCompleted = event?.status === "completed";
     const canJudge =
         event && (canManage || judges.some((j) => j.user_id === user?.id));
     const registrationsOpen = event?.status === "registration_open";
@@ -374,28 +376,7 @@ export default function EventPage() {
         fetch(true);
     }, [fetch]);
 
-    useEffect(() => {
-        if (!canManage) return;
-        if (!matches || matches.length === 0) return;
-        if (matches[0]?.bracket_type !== "single_elim") return;
 
-        const needsLink = matches.some(
-            (m) => m.round > 0 && (!m.next_match_id || !m.next_match_slot),
-        );
-        const needsBye = matches.some((m) => {
-            const hasA = !!m.team_a_id;
-            const hasB = !!m.team_b_id;
-            return (
-                !m.winner_id &&
-                m.status !== "completed" &&
-                ((hasA && !hasB) || (!hasA && hasB))
-            );
-        });
-
-        if ((needsLink || needsBye) && !fixingBracket) {
-            finalizeSingleElimBracket().then(() => fetch());
-        }
-    }, [canManage, matches, fixingBracket, fetch]);
 
     useRealtimeLeaderboard(id, setTeams);
     useRealtimeBracket(id, setMatches);
@@ -1332,7 +1313,7 @@ export default function EventPage() {
                                     </div>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div className="p-6 bg-content2/50  border border-default-200/50 space-y-4">
+                                        <div className="p-6 rounded-xl bg-content2/50  border border-default-200/50 space-y-4">
                                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                                 <Info size={18} /> About Event
                                             </h3>
@@ -1489,6 +1470,7 @@ export default function EventPage() {
                                                 <Button
                                                     color="primary"
                                                     onPress={openAddTeam}
+                                                    isDisabled={isCompleted}
                                                     endContent={
                                                         <Plus size={16} />
                                                     }
@@ -1720,6 +1702,7 @@ export default function EventPage() {
                                                             isLoading={
                                                                 generatingBracket
                                                             }
+                                                            isDisabled={isCompleted}
                                                             onPress={
                                                                 handleGenerateBracket
                                                             }
@@ -1739,6 +1722,7 @@ export default function EventPage() {
                                                             isLoading={
                                                                 regeneratingBracket
                                                             }
+                                                            isDisabled={isCompleted}
                                                             onPress={
                                                                 handleRegenerateBracket
                                                             }
@@ -1775,7 +1759,7 @@ export default function EventPage() {
                                                             teams={teams}
                                                             bracketType={
                                                                 matches[0]?.bracket_type ||
-                                                                "single_elim"
+                                                                "single_elim" && !isCompleted
                                                             }
                                                             canEdit={canJudge}
                                                             onEditMatch={handleEditMatch}
@@ -1823,7 +1807,7 @@ export default function EventPage() {
                                     </div>
                                     <Leaderboard
                                         teams={teams}
-                                        canJudge={canJudge}
+                                        canJudge={canJudge && !isCompleted}
                                         onScoreChange={handleScoreChange}
                                     />
                                 </Tab>
@@ -2388,6 +2372,7 @@ export default function EventPage() {
                             eventId={id}
                             teamMetadata={teamMetadata}
                             onMetadataChange={setTeamMetadata}
+                            onValidationChange={setIsMetadataValid}
                         />
                     </ModalBody>
                     <ModalFooter>
@@ -2398,6 +2383,7 @@ export default function EventPage() {
                             color="primary"
                             onPress={saveTeam}
                             isLoading={teamSaving}
+                            isDisabled={!teamName || !isMetadataValid}
                         >
                             Save
                         </Button>

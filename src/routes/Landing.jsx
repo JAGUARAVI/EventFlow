@@ -28,7 +28,12 @@ export default function Landing() {
                             <div className="inline-flex px-3 py-1 rounded-full border border-sunset-orange/30 bg-sunset-orange/10 text-sunset-orange text-xs font-medium uppercase tracking-wider mb-2">
                                 Event Management Reimagined
                             </div>
-                            <h1 className="text-5xl md:text-7xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sunset-blue to-sunset-pink dark:from-sunset-orange dark:to-sunset-pink">
+                            <h1 className="
+                                text-5xl md:text-7xl font-bold tracking-tight
+                                bg-clip-text text-transparent
+                                bg-gradient-to-r
+                                from-[#4f46e5] to-[#ec4899]
+                                dark:from-[#fb923c] dark:to-[#ec4899]">
                                 Run live competitions <br />
                                 with confidence
                             </h1>

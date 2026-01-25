@@ -300,7 +300,7 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
                     </div>
                   </CardBody>
                 </Card>
-                <Divider className="mt-4" />
+                {/*<Divider className="mt-4" />*/}
               </div>
             ))}
           </div>
