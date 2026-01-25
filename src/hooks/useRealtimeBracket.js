@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
  * @param {string} eventId
  * @param {function} setMatches - (updater: (prev) => next) => void
  */
-export function useRealtimeBracket(eventId, setMatches, onMatchCompletion) {
+export function useRealtimeBracket(eventId, setMatches, onMatchCompletion, onReload) {
   useEffect(() => {
     if (!eventId) return;
 
@@ -41,10 +41,13 @@ export function useRealtimeBracket(eventId, setMatches, onMatchCompletion) {
           }
         }
       )
+      .on("broadcast", { event: "reload" }, () => {
+        onReload?.();
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, setMatches, onMatchCompletion]);
+  }, [eventId, setMatches, onMatchCompletion, onReload]);
 }

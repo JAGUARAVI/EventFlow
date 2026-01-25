@@ -450,7 +450,7 @@ export default function EventPage() {
     });
   }, []);
 
-  useRealtimeBracket(id, setMatches, onMatchComplete);
+  useRealtimeBracket(id, setMatches, onMatchComplete, () => fetch());
   useRealtimePolls(id, setPolls, setPollOptions);
 
   const buildBracketMatches = (type) => {
@@ -540,6 +540,11 @@ export default function EventPage() {
       metadata: { bracket_type: bracketType },
     });
     await finalizeSingleElimBracket();
+
+    // Broadcast reload to force sync clients
+    const channel = supabase.channel(`bracket:${id}`);
+    channel.send({ type: "broadcast", event: "reload", payload: {} });
+
     fetch();
     addToast({ title: "Bracket regenerated", severity: "success" });
   };
@@ -1578,13 +1583,24 @@ export default function EventPage() {
                     </div>
                     <div className="flex gap-2 w-full sm:w-auto items-center">
                       {registrationsOpen && !canManage && !isTeamRegistered && (
-                        <Button
-                          color="primary"
-                          onPress={openAddTeam}
-                          endContent={<Plus size={16} />}
-                        >
-                          Register Team
-                        </Button>
+                        user ? (
+                          <Button
+                            color="primary"
+                            onPress={openAddTeam}
+                            endContent={<Plus size={16} />}
+                          >
+                            Register Team
+                          </Button>
+                        ) : (
+                          <Button
+                            as={Link}
+                            to="/login"
+                            color="primary"
+                            endContent={<Plus size={16} />}
+                          >
+                            Sign in to Register
+                          </Button>
+                        )
                       )}
                       {canManage && (
                         <Button
