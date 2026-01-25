@@ -11,6 +11,7 @@ import {
     Avatar,
     Button,
     Switch,
+    Image
 } from "@heroui/react";
 import { useAuth } from "../../hooks/useAuth";
 import { useTheme } from "../../context/ThemeContext";
@@ -57,8 +58,11 @@ export default function Navbar() {
             }}
         >
             <NavbarBrand as={Link} to="/" className="gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-xl shadow-lg invert dark:invert-0">
-                    E
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                    <Image
+                            src="/EventFlow.svg"
+                            alt="EventFlow Logo"
+                        />
                 </div>
                 <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-default-500">
                     EventFlow

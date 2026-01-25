@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Modal,
   ModalContent,
@@ -26,14 +26,22 @@ export default function EventCloneDialog({ event, isOpen, onOpenChange, onCloneS
     clonePolls: false,
   });
 
-  const handleOpenChange = (isOpen) => {
-    if (isOpen) {
+  // Load preview when modal opens
+  useEffect(() => {
+    if (isOpen && event?.id && !preview) {
       loadPreview();
-    } else {
+    }
+    if (!isOpen) {
       setPreview(null);
     }
-    onOpenChange(isOpen);
-  };
+  }, [isOpen, event?.id]);
+
+  // Update newName when event changes
+  useEffect(() => {
+    if (event?.name) {
+      setNewName(`${event.name} (Copy)`);
+    }
+  }, [event?.name]);
 
   const loadPreview = async () => {
     try {
@@ -64,7 +72,7 @@ export default function EventCloneDialog({ event, isOpen, onOpenChange, onCloneS
   };
 
   return (
-    <Modal isOpen={isOpen} onOpenChange={handleOpenChange} size="lg">
+    <Modal isOpen={isOpen} onOpenChange={onOpenChange} size="lg">
       <ModalContent>
         <ModalHeader>Clone Event</ModalHeader>
         <ModalBody className="gap-4">
@@ -155,7 +163,7 @@ export default function EventCloneDialog({ event, isOpen, onOpenChange, onCloneS
         </ModalBody>
 
         <ModalFooter>
-          <Button color="default" onPress={() => handleOpenChange(false)}>
+          <Button color="default" onPress={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

@@ -3,16 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { ArrowUp, ArrowDown, Minus, Search } from 'lucide-react';
 
-function sortedWithRank(teams) {
+function sortedWithRank(teams, sortOrder = 'desc') {
   const arr = [...(teams || [])].map((t) => ({ ...t, _score: Number(t.score) || 0 }));
   arr.sort((a, b) => {
-    if (b._score !== a._score) return b._score - a._score;
+    const scoreCompare = sortOrder === 'asc' 
+      ? a._score - b._score 
+      : b._score - a._score;
+    if (scoreCompare !== 0) return scoreCompare;
     return (a.created_at || '').localeCompare(b.created_at || '');
   });
   return arr.map((t, i) => ({ ...t, rank: i + 1 }));
 }
 
-export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigScreen = false }) {
+export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigScreen = false, sortOrder = 'desc' }) {
   const [delta, setDelta] = useState({});
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -21,7 +24,7 @@ export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigSc
 
   const rowsPerPage = bigScreen ? 8 : 10;
 
-  const rows = useMemo(() => sortedWithRank(teams), [teams]);
+  const rows = useMemo(() => sortedWithRank(teams, sortOrder), [teams, sortOrder]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()));

@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabasePublicKey = import.meta.env.VITE_SUPABASE_PUBLIC_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Create .env from .env.example');
+if (!supabaseUrl || !supabasePublicKey) {
+  console.warn('Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLIC_KEY. Create .env from .env.example');
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+export const supabase = createClient(supabaseUrl || '', supabasePublicKey || '', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

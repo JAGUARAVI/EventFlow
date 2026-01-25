@@ -29,6 +29,7 @@ export default function EventForm() {
   const [hideAnalytics, setHideAnalytics] = useState(false);
   const [hideTimeline, setHideTimeline] = useState(false);
   const [hideJudges, setHideJudges] = useState(false);
+  const [leaderboardSortOrder, setLeaderboardSortOrder] = useState('desc');
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(isEdit);
   const [error, setError] = useState('');
@@ -70,6 +71,7 @@ export default function EventForm() {
       setHideAnalytics(settings.hide_analytics || false);
       setHideTimeline(settings.hide_timeline || false);
       setHideJudges(settings.hide_judges || false);
+      setLeaderboardSortOrder(settings.leaderboard_sort_order || 'desc');
     })();
   }, [id, isEdit, user, profile?.role, navigate, authLoading]);
 
@@ -89,6 +91,7 @@ export default function EventForm() {
         hide_analytics: hideAnalytics,
         hide_timeline: hideTimeline,
         hide_judges: hideJudges,
+        leaderboard_sort_order: leaderboardSortOrder,
       },
       updated_at: new Date().toISOString(),
     };
@@ -175,6 +178,15 @@ export default function EventForm() {
             Hide Judges tab from viewers
           </Checkbox>
         </div>
+        <Select
+          label="Leaderboard Sort Order"
+          selectedKeys={[leaderboardSortOrder]}
+          onSelectionChange={(s) => setLeaderboardSortOrder([...s][0] || 'desc')}
+          description="Choose how teams are ranked on the leaderboard"
+        >
+          <SelectItem key="desc">Descending (highest score first)</SelectItem>
+          <SelectItem key="asc">Ascending (lowest score first)</SelectItem>
+        </Select>
         <div className="flex gap-2">
           <Button type="submit" color="primary" isLoading={loading}>
             {isEdit ? 'Save' : 'Create'}

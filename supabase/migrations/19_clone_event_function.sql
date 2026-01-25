@@ -12,14 +12,15 @@ CREATE OR REPLACE FUNCTION clone_event(
 DECLARE
   new_event_id uuid;
   old_event record;
-  new_team_map hstore;
-  old_team_id uuid;
+  team_rec record;
   new_team_id uuid;
-  old_user_id uuid;
   old_match_id uuid;
   new_match_id uuid;
   old_poll_id uuid;
   new_poll_id uuid;
+  mapped_team_a uuid;
+  mapped_team_b uuid;
+  mapped_team uuid;
 BEGIN
   -- Check authorization: user must be admin or event creator
   IF NOT (is_admin() OR EXISTS(
@@ -34,30 +35,43 @@ BEGIN
     RAISE EXCEPTION 'Event not found';
   END IF;
 
+  -- Create temporary table for team ID mapping
+  CREATE TEMP TABLE IF NOT EXISTS team_id_map (
+    old_id uuid PRIMARY KEY,
+    new_id uuid NOT NULL
+  ) ON COMMIT DROP;
+  
+  -- Clear any existing data
+  TRUNCATE team_id_map;
+
   -- Create new event
   INSERT INTO events (
     name,
     description,
-    types,
+    type,
+    event_types,
     visibility,
     settings,
     created_by,
     status,
-    timeline
+    timeline,
+    banner_url
   ) VALUES (
     COALESCE(new_name, old_event.name || ' (Copy)'),
     old_event.description,
-    old_event.types,
+    old_event.type,
+    old_event.event_types,
     old_event.visibility,
     old_event.settings,
     auth.uid(),
     'draft',
-    old_event.timeline
+    old_event.timeline,
+    old_event.banner_url
   ) RETURNING id INTO new_event_id;
 
   -- Clone teams if requested
   IF clone_teams THEN
-    FOR old_team_id IN SELECT id FROM teams WHERE event_id = source_event_id LOOP
+    FOR team_rec IN SELECT * FROM teams WHERE event_id = source_event_id LOOP
       INSERT INTO teams (
         event_id,
         name,
@@ -65,18 +79,17 @@ BEGIN
         metadata,
         description,
         poc_user_id
-      ) SELECT
+      ) VALUES (
         new_event_id,
-        name,
+        team_rec.name,
         0,  -- reset score
-        metadata,
-        description,
-        poc_user_id
-      FROM teams WHERE id = old_team_id
-      RETURNING id INTO new_team_id;
+        team_rec.metadata,
+        team_rec.description,
+        team_rec.poc_user_id
+      ) RETURNING id INTO new_team_id;
 
-      -- Store mapping for later use
-      new_team_map := new_team_map || (old_team_id::text => new_team_id::text);
+      -- Store mapping
+      INSERT INTO team_id_map (old_id, new_id) VALUES (team_rec.id, new_team_id);
     END LOOP;
   END IF;
 
@@ -88,8 +101,14 @@ BEGIN
   END IF;
 
   -- Clone matches if requested
-  IF clone_matches AND new_team_map IS NOT NULL THEN
+  IF clone_matches AND EXISTS (SELECT 1 FROM team_id_map) THEN
     FOR old_match_id IN SELECT id FROM matches WHERE event_id = source_event_id LOOP
+      -- Look up mapped team IDs
+      SELECT new_id INTO mapped_team_a FROM team_id_map 
+        WHERE old_id = (SELECT team_a_id FROM matches WHERE id = old_match_id);
+      SELECT new_id INTO mapped_team_b FROM team_id_map 
+        WHERE old_id = (SELECT team_b_id FROM matches WHERE id = old_match_id);
+      
       INSERT INTO matches (
         event_id,
         bracket_type,
@@ -108,8 +127,8 @@ BEGIN
         bracket_type,
         round,
         position,
-        CASE WHEN team_a_id IS NOT NULL THEN (new_team_map -> team_a_id::text)::uuid ELSE NULL END,
-        CASE WHEN team_b_id IS NOT NULL THEN (new_team_map -> team_b_id::text)::uuid ELSE NULL END,
+        mapped_team_a,
+        mapped_team_b,
         team_a_score,
         team_b_score,
         NULL,  -- reset winner
@@ -142,18 +161,15 @@ BEGIN
         poll_id,
         label,
         points,
-        team_id,
-        order_index
+        team_id
       ) SELECT
         new_poll_id,
-        label,
-        points,
-        CASE WHEN team_id IS NOT NULL AND new_team_map IS NOT NULL
-          THEN (new_team_map -> team_id::text)::uuid
-          ELSE NULL
-        END,
-        order_index
-      FROM poll_options WHERE poll_id = old_poll_id;
+        po.label,
+        po.points,
+        tim.new_id
+      FROM poll_options po
+      LEFT JOIN team_id_map tim ON tim.old_id = po.team_id
+      WHERE po.poll_id = old_poll_id;
     END LOOP;
   END IF;
 
