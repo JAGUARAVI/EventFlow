@@ -30,6 +30,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^4.1.18",
     "vite": "^6.0.1",
-    "vite-plugin-mkcert": "^1.17.9"
+    "vite-plugin-mkcert": "^1.17.9",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }

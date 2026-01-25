@@ -1,6 +1,6 @@
 {
-  "short_name": "DesignBattles",
-  "name": "Design Battles Manager",
+  "short_name": "EventFlow",
+  "name": "EventFlow - Events Manager",
   "icons": [
     {
       "src": "windows11/SmallTile.scale-100.png",

@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import Navbar from "./Navbar";
 import RadiantPatches from "./RadiantPatches";
+import PWAInstallPrompt from "../PWAInstallPrompt";
 
 export default function AppLayout() {
   return (
@@ -11,6 +12,7 @@ export default function AppLayout() {
       <main className="flex-1 w-full relative z-10">
         <Outlet />
       </main>
+      <PWAInstallPrompt />
     </div>
   );
 }
