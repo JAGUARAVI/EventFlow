@@ -21,6 +21,8 @@ export default function App() {
     const getThemeClass = () => {
         if (themeName === 'sunset') {
             return isDark ? 'sunset-dark' : 'sunset-light'; // Ensure 'sunset-dark' corresponds to your hero.js definition
+        } else if (themeName === 'coffee') {
+            return isDark ? 'coffee-dark' : 'coffee-light'; // Ensure 'coffee-dark' corresponds to your hero.js definition
         }
         // 'modern' or fallback
         return isDark ? 'dark' : 'light';

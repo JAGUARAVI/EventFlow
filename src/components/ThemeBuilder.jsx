@@ -89,6 +89,9 @@ export default function ThemeBuilder({ isOpen, onOpenChange, eventId, currentThe
                 <CustomRadio description="Brand colors (Deep Blue & Hot Pink)" value="sunset">
                   Sunset
                 </CustomRadio>
+                <CustomRadio description="Rich brown tones with a cozy feel" value="coffee">
+                  Coffee
+                </CustomRadio>
               </RadioGroup>
               
               <div className="mt-4 p-4 rounded-lg border border-default-200">

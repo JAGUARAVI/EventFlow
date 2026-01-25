@@ -235,7 +235,7 @@ export default function TimelineView({
                             event.type === "round"
                               ? "bg-primary"
                               : event.type === "match"
-                                ? "bg-danger"
+                                ? "bg-success"
                                 : "bg-secondary"
                           }`}
                         />

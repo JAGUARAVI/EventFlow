@@ -48,7 +48,7 @@ const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
   const [isDark, setIsDark] = useState(readInitialMode);
-  // Theme name: 'modern' (default), 'sunset', etc.
+  // Theme name: 'modern', 'sunset' (default), etc.
   const [themeName, setThemeName] = useState(() => {
      try {
          return localStorage.getItem(PREDEFINED_AND_CUSTOM_KEY) || 'sunset';
