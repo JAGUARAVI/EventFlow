@@ -11,10 +11,12 @@ import {
   cn
 } from '@heroui/react';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../context/ThemeContext';
 
 export default function ThemeBuilder({ isOpen, onOpenChange, eventId, currentTheme, onSave }) {
   const [selectedTheme, setSelectedTheme] = useState(currentTheme || 'modern');
   const [loading, setLoading] = useState(false);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     if (currentTheme) {
@@ -72,7 +74,7 @@ export default function ThemeBuilder({ isOpen, onOpenChange, eventId, currentThe
   };
 
   return (
-    <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+    <Modal className={selectedTheme + (isDark ? "-dark" : "-light")} isOpen={isOpen} onOpenChange={onOpenChange}>
       <ModalContent>
         {(onClose) => (
           <>
@@ -96,18 +98,9 @@ export default function ThemeBuilder({ isOpen, onOpenChange, eventId, currentThe
               
               <div className="mt-4 p-4 rounded-lg border border-default-200">
                 <h4 className="text-small font-bold mb-2">Preview</h4>
-                <div className={cn(
-                  "p-4 rounded-md transition-colors",
-                  selectedTheme === 'sunset' ? "bg-[#0D1164] text-white" : "bg-content1 text-foreground"
-                )}>
+                <div className="p-4 rounded-md transition-colors">
                   <p className="font-bold">Event Title</p>
-                  <Button 
-                    size="sm" 
-                    className={cn(
-                      "mt-2",
-                       selectedTheme === 'sunset' ? "bg-[#EA2264] text-white" : "bg-primary text-primary-foreground"
-                    )}
-                  >
+                  <Button size="sm" className="mt-2">
                     Action
                   </Button>
                 </div>
