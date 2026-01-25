@@ -88,8 +88,10 @@ export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigSc
         )}
       </div>
 
-      <AnimatePresence mode="popLayout">
-      {paginatedRows.map((t) => {
+      <div className="overflow-x-auto">
+        <div className={bigScreen ? '' : 'min-w-[640px]'}>
+          <AnimatePresence mode="popLayout">
+          {paginatedRows.map((t) => {
          const move = movements[t.id];
          return (
         <motion.div
@@ -112,8 +114,8 @@ export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigSc
           </div>
 
           <div className="flex-1 min-w-0">
-             <span className={`font-bold truncate block ${textSize}`}>{t.name}</span>
-             {bigScreen && t.description && <p className="text-default-500 text-lg truncate">{t.description}</p>}
+             <span className={`font-bold block ${textSize} truncate`}>{t.name}</span>
+             {bigScreen && t.description && <p className="text-default-500 text-lg">{t.description}</p>}
           </div>
 
           <div className={`w-24 md:w-40 text-right font-mono font-bold ${textSize} ${move === 'up' ? 'text-success' : move === 'down' ? 'text-danger' : 'text-primary'}`}>
@@ -139,7 +141,9 @@ export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigSc
         </motion.div>
         );
       })}
-      </AnimatePresence>
+          </AnimatePresence>
+        </div>
+      </div>
       
       {filteredRows.length === 0 && (
           <div className="text-center py-8 text-default-400">
