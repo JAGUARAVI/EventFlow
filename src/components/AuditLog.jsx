@@ -1,20 +1,30 @@
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Chip, Input, Pagination } from '@heroui/react';
-import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+  Chip,
+  Input,
+  Pagination,
+} from "@heroui/react";
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 
 function formatAction(item) {
-  if (item.kind === 'score') return 'Score';
+  if (item.kind === "score") return "Score";
   if (item.action) return item.action;
-  return 'Event';
+  return "Event";
 }
 
 function formatMessage(item) {
-  if (item.kind === 'score') {
-    const name = item.teams?.name ?? item.team_id ?? 'Team';
+  if (item.kind === "score") {
+    const name = item.teams?.name ?? item.team_id ?? "Team";
     const delta = Number(item.delta) || 0;
-    return `${name} ${delta >= 0 ? '+' : ''}${delta}`;
+    return `${name} ${delta >= 0 ? "+" : ""}${delta}`;
   }
-  return item.message || '';
+  return item.message || "";
 }
 
 export default function AuditLog({ items = [], currentUserId }) {
@@ -30,11 +40,13 @@ export default function AuditLog({ items = [], currentUserId }) {
       filtered = filtered.filter((item) => {
         const action = formatAction(item).toLowerCase();
         const message = formatMessage(item).toLowerCase();
-        const by = (item.changed_by || item.created_by || '').toLowerCase();
-        
-        return action.includes(lowerCaseFilter) || 
-               message.includes(lowerCaseFilter) || 
-               by.includes(lowerCaseFilter);
+        const by = (item.changed_by || item.created_by || "").toLowerCase();
+
+        return (
+          action.includes(lowerCaseFilter) ||
+          message.includes(lowerCaseFilter) ||
+          by.includes(lowerCaseFilter)
+        );
       });
     }
 
@@ -65,23 +77,23 @@ export default function AuditLog({ items = [], currentUserId }) {
         onClear={() => setFilterValue("")}
         onValueChange={setFilterValue}
       />
-      <Table 
+      <Table
         aria-label="Audit log"
         bottomContent={
-            pages > 1 ? (
-              <div className="flex w-full justify-center">
-                <Pagination
-                  isCompact
-                  showControls
-                  showShadow
-                  color="primary"
-                  page={page}
-                  total={pages}
-                  onChange={(page) => setPage(page)}
-                />
-              </div>
-            ) : null
-          }
+          pages > 1 ? (
+            <div className="flex w-full justify-center">
+              <Pagination
+                isCompact
+                showControls
+                showShadow
+                color="primary"
+                page={page}
+                total={pages}
+                onChange={(page) => setPage(page)}
+              />
+            </div>
+          ) : null
+        }
       >
         <TableHeader>
           <TableColumn>TIME</TableColumn>
@@ -96,10 +108,14 @@ export default function AuditLog({ items = [], currentUserId }) {
               <TableRow key={r.id}>
                 <TableCell>{new Date(r.created_at).toLocaleString()}</TableCell>
                 <TableCell>
-                  <Chip size="sm" variant="flat">{formatAction(r)}</Chip>
+                  <Chip size="sm" variant="flat">
+                    {formatAction(r)}
+                  </Chip>
                 </TableCell>
                 <TableCell>{formatMessage(r)}</TableCell>
-                <TableCell>{by === currentUserId ? 'You' : (by || '').slice(0, 8) + '…'}</TableCell>
+                <TableCell>
+                  {by === currentUserId ? "You" : by || "System"}
+                </TableCell>
               </TableRow>
             );
           })}

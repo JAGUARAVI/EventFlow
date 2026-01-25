@@ -334,7 +334,39 @@ export default function EventPage() {
           ...x,
           kind: "event",
         }));
+
+        const userIds = new Set();
+        [...scoreItems, ...auditItems].forEach((item) => {
+          const uid = item.changed_by || item.created_by;
+          if (uid) userIds.add(uid);
+        });
+
+        let profileMap = {};
+        if (userIds.size > 0) {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id, display_name, email")
+            .in("id", Array.from(userIds));
+
+          if (profiles) {
+            profiles.forEach((p) => {
+              profileMap[p.id] = p.display_name || p.email;
+            });
+          }
+        }
+
         const mergedAudit = [...scoreItems, ...auditItems]
+          .map((item) => {
+            return {
+              ...item,
+              created_by: item.created_by
+                ? profileMap[item.created_by] || item.created_by
+                : null,
+              changed_by: item.changed_by
+                ? profileMap[item.changed_by] || item.changed_by
+                : null,
+            };
+          })
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
           .slice(0, 200);
         setAuditItems(mergedAudit);
@@ -2014,7 +2046,12 @@ export default function EventPage() {
                     </Button>
                   </div>
                   <div className="border border-default-200 rounded-xl overflow-hidden">
-                    <AuditLog items={auditItems} currentUserId={user?.id} />
+                    <AuditLog
+                      items={auditItems}
+                      currentUserId={
+                        profile?.display_name || user?.email || user?.id
+                      }
+                    />
                   </div>
                 </Tab>
               )}
