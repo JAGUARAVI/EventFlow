@@ -440,7 +440,7 @@ export default function EventPage() {
   }, [fetch]);
 
   useRealtimeLeaderboard(id, setTeams);
-  
+
   const onMatchComplete = useCallback((completedMatch) => {
     confetti({
       particleCount: 150,
@@ -1078,10 +1078,10 @@ export default function EventPage() {
     <TableColumn key="name">NAME</TableColumn>,
     ...(canManage
       ? [
-          <TableColumn key="actions" align="end">
-            ACTIONS
-          </TableColumn>,
-        ]
+        <TableColumn key="actions" align="end">
+          ACTIONS
+        </TableColumn>,
+      ]
       : []),
   ];
 
@@ -1112,10 +1112,10 @@ export default function EventPage() {
     <TableColumn key="user_id">USER ID</TableColumn>,
     ...(canManage
       ? [
-          <TableColumn key="actions" align="end">
-            ACTIONS
-          </TableColumn>,
-        ]
+        <TableColumn key="actions" align="end">
+          ACTIONS
+        </TableColumn>,
+      ]
       : []),
   ];
 
@@ -1214,8 +1214,8 @@ export default function EventPage() {
   }
 
   return (
-      <div className="min-h-screen bg-linear-to-br from-background via-default-50/50 to-background">
-        {/* Hero Header */}
+    <div className="min-h-screen bg-linear-to-br from-background via-default-50/50 to-background">
+      {/* Hero Header */}
 
       <div className="relative w-full h-75 -mb-15">
         {event?.banner_url ? (
@@ -1304,7 +1304,7 @@ export default function EventPage() {
                       </Button>
                     </DropdownTrigger>
                     <DropdownMenu aria-label="Event actions">
-                     <DropdownItem
+                      <DropdownItem
                         key="theme"
                         startContent={<Palette size={16} />}
                         onPress={onThemeOpen}
@@ -1641,193 +1641,185 @@ export default function EventPage() {
                     </div>
                   </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {filteredTeams.length === 0 ? (
-                                            <div className="col-span-full py-12 text-center text-default-400 border border-dashed border-default-200 rounded-xl">
-                                                <Users
-                                                    size={48}
-                                                    className="mx-auto mb-4 opacity-50"
-                                                />
-                                                <p>No teams found</p>
-                                            </div>
-                                        ) : (
-                                            filteredTeams.map((t) => {
-                                                const isExpanded =
-                                                    expandedTeams.has(t.id);
-                                                return (
-                                                    <Card
-                                                        key={t.id}
-                                                        className="group border border-transparent hover:border-primary/20 transition-all"
-                                                    >
-                                                        <CardBody className="gap-3">
-                                                            <div className="flex items-start justify-between">
-                                                                <div
-                                                                    className="flex-1 cursor-pointer"
-                                                                    onClick={() =>
-                                                                        canManage
-                                                                            ? toggleTeamExpansion(
-                                                                                  t.id,
-                                                                              )
-                                                                            : {}
-                                                                    }
-                                                                >
-                                                                    <div className="flex items-center justify-between mb-1">
-                                                                        <h4 className="font-bold text-lg line-clamp-1">
-                                                                            {
-                                                                                t.name
-                                                                            }
-                                                                        </h4>
-                                                                        {canManage && (
-                                                                            <ChevronDown
-                                                                                size={
-                                                                                    16
-                                                                                }
-                                                                                className={`text-default-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                                                                            />
-                                                                        )}
-                                                                    </div>
-                                                                    {t.description && (
-                                                                        <p className="text-sm text-default-500 line-clamp-2">
-                                                                            {
-                                                                                t.description
-                                                                            }
-                                                                        </p>
-                                                                    )}
-                                                                </div>
-                                                                {canManage && (
-                                                                    <Dropdown>
-                                                                        <DropdownTrigger>
-                                                                            <Button
-                                                                                isIconOnly
-                                                                                size="sm"
-                                                                                variant="light"
-                                                                                className="opacity-0 group-hover:opacity-100"
-                                                                            >
-                                                                                <MoreVertical
-                                                                                    size={
-                                                                                        16
-                                                                                    }
-                                                                                />
-                                                                            </Button>
-                                                                        </DropdownTrigger>
-                                                                        <DropdownMenu>
-                                                                            <DropdownItem
-                                                                                startContent={
-                                                                                    <Edit3
-                                                                                        size={
-                                                                                            14
-                                                                                        }
-                                                                                    />
-                                                                                }
-                                                                                onPress={() =>
-                                                                                    openEditTeam(
-                                                                                        t,
-                                                                                    )
-                                                                                }
-                                                                            >
-                                                                                Edit
-                                                                                Details
-                                                                            </DropdownItem>
-                                                                            <DropdownItem
-                                                                                startContent={
-                                                                                    <Trash2
-                                                                                        size={
-                                                                                            14
-                                                                                        }
-                                                                                    />
-                                                                                }
-                                                                                className="text-danger"
-                                                                                color="danger"
-                                                                                onPress={() =>
-                                                                                    removeTeam(
-                                                                                        t.id,
-                                                                                    )
-                                                                                }
-                                                                            >
-                                                                                Remove
-                                                                                Team
-                                                                            </DropdownItem>
-                                                                        </DropdownMenu>
-                                                                    </Dropdown>
-                                                                )}
-                                                            </div>
-                                                            {isExpanded && (
-                                                                <div className="pt-3 border-t border-divider">
-                                                                    <TeamMetadataDisplay
-                                                                        eventId={
-                                                                            id
-                                                                        }
-                                                                        teamMetadata={
-                                                                            t.metadata_values ||
-                                                                            {}
-                                                                        }
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                        </CardBody>
-                                                    </Card>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-                            </Tab>
-                            {hasType("bracket") && (
-                                <Tab
-                                    key="bracket"
-                                    title="Bracket"
-                                    className="p-6"
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredTeams.length === 0 ? (
+                      <div className="col-span-full py-12 text-center text-default-400 border border-dashed border-default-200 rounded-xl">
+                        <Users
+                          size={48}
+                          className="mx-auto mb-4 opacity-50"
+                        />
+                        <p>No teams found</p>
+                      </div>
+                    ) : (
+                      filteredTeams.map((t) => {
+                        const isExpanded =
+                          expandedTeams.has(t.id);
+                        return (
+                          <Card
+                            key={t.id}
+                            className="group border border-transparent hover:border-primary/20 transition-all"
+                          >
+                            <CardBody className="gap-3">
+                              <div className="flex items-start justify-between">
+                                <div
+                                  className="flex-1 cursor-pointer"
+                                  onClick={() =>toggleTeamExpansion(t.id)}
                                 >
-                                    <div className="space-y-6">
-                                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                                            <div>
-                                                <h3 className="text-xl font-bold flex items-center gap-2">
-                                                    <Trophy
-                                                        className="text-warning"
-                                                        size={24}
-                                                    />{" "}
-                                                    Tournament Bracket
-                                                </h3>
-                                                <p className="text-default-500 text-sm">
-                                                    Follow the tournament
-                                                    progress and results
-                                                </p>
-                                            </div>
-                                            {canManage && (
-                                                <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                                                    <Select
-                                                        aria-label="Bracket Type"
-                                                        placeholder="Bracket Type"
-                                                        size="sm"
-                                                        selectedKeys={[
-                                                            bracketType,
-                                                        ]}
-                                                        onSelectionChange={(
-                                                            keys,
-                                                        ) =>
-                                                            setBracketType(
-                                                                [...keys][0] ||
-                                                                    "single_elim",
-                                                            )
-                                                        }
-                                                        className="w-40"
-                                                        startContent={
-                                                            <Settings
-                                                                size={14}
-                                                                className="text-default-400"
-                                                            />
-                                                        }
-                                                    >
-                                                        <SelectItem key="single_elim">
-                                                            Single Elimination
-                                                        </SelectItem>
-                                                        <SelectItem key="round_robin">
-                                                            Round Robin
-                                                        </SelectItem>
-                                                        <SelectItem key="swiss">
-                                                            Swiss System
-                                                        </SelectItem>
-                                                    </Select>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <h4 className="font-bold text-lg line-clamp-1">
+                                      {
+                                        t.name
+                                      }
+                                    </h4>
+                                    <ChevronDown
+                                      size={
+                                        16
+                                      }
+                                      className={`text-default-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                    />
+                                  </div>
+                                  {t.description && (
+                                    <p className="text-sm text-default-500 line-clamp-2">
+                                      {
+                                        t.description
+                                      }
+                                    </p>
+                                  )}
+                                </div>
+                                {canManage && (
+                                  <Dropdown>
+                                    <DropdownTrigger>
+                                      <Button
+                                        isIconOnly
+                                        size="sm"
+                                        variant="light"
+                                        className="opacity-0 group-hover:opacity-100"
+                                      >
+                                        <MoreVertical
+                                          size={
+                                            16
+                                          }
+                                        />
+                                      </Button>
+                                    </DropdownTrigger>
+                                    <DropdownMenu>
+                                      <DropdownItem
+                                        startContent={
+                                          <Edit3
+                                            size={
+                                              14
+                                            }
+                                          />
+                                        }
+                                        onPress={() =>
+                                          openEditTeam(
+                                            t,
+                                          )
+                                        }
+                                      >
+                                        Edit
+                                        Details
+                                      </DropdownItem>
+                                      <DropdownItem
+                                        startContent={
+                                          <Trash2
+                                            size={
+                                              14
+                                            }
+                                          />
+                                        }
+                                        className="text-danger"
+                                        color="danger"
+                                        onPress={() =>
+                                          removeTeam(
+                                            t.id,
+                                          )
+                                        }
+                                      >
+                                        Remove
+                                        Team
+                                      </DropdownItem>
+                                    </DropdownMenu>
+                                  </Dropdown>
+                                )}
+                              </div>
+                              {isExpanded && (
+                                <div className="pt-3 border-t border-divider">
+                                  <TeamMetadataDisplay
+                                    eventId={
+                                      id
+                                    }
+                                    teamMetadata={
+                                      t.metadata_values ||
+                                      {}
+                                    }
+                                  />
+                                </div>
+                              )}
+                            </CardBody>
+                          </Card>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </Tab>
+              {hasType("bracket") && (
+                <Tab
+                  key="bracket"
+                  title="Bracket"
+                  className="p-6"
+                >
+                  <div className="space-y-6">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                      <div>
+                        <h3 className="text-xl font-bold flex items-center gap-2">
+                          <Trophy
+                            className="text-warning"
+                            size={24}
+                          />{" "}
+                          Tournament Bracket
+                        </h3>
+                        <p className="text-default-500 text-sm">
+                          Follow the tournament
+                          progress and results
+                        </p>
+                      </div>
+                      {canManage && (
+                        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                          <Select
+                            aria-label="Bracket Type"
+                            placeholder="Bracket Type"
+                            size="sm"
+                            selectedKeys={[
+                              bracketType,
+                            ]}
+                            onSelectionChange={(
+                              keys,
+                            ) =>
+                              setBracketType(
+                                [...keys][0] ||
+                                "single_elim",
+                              )
+                            }
+                            className="w-40"
+                            startContent={
+                              <Settings
+                                size={14}
+                                className="text-default-400"
+                              />
+                            }
+                          >
+                            <SelectItem key="single_elim">
+                              Single Elimination
+                            </SelectItem>
+                            <SelectItem key="round_robin">
+                              Round Robin
+                            </SelectItem>
+                            <SelectItem key="swiss">
+                              Swiss System
+                            </SelectItem>
+                          </Select>
 
                           {matches.length === 0 ? (
                             <Button
@@ -2479,15 +2471,15 @@ export default function EventPage() {
         eventId={id}
         currentTheme={event?.settings?.theme}
         onSave={(newTheme) => {
-            setEvent(prev => ({
-                ...prev,
-                settings: { ...prev.settings, theme: newTheme }
-            }));
-            fetch();
+          setEvent(prev => ({
+            ...prev,
+            settings: { ...prev.settings, theme: newTheme }
+          }));
+          fetch();
         }}
       />
 
-      </div>
+    </div>
   );
 }
 
