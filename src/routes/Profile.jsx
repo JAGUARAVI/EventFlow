@@ -34,7 +34,6 @@ export default function Profile() {
   const [loading, setLoading] = useState(!profile);
 
   // Password update state
-  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [updatingPassword, setUpdatingPassword] = useState(false);
@@ -124,33 +123,11 @@ export default function Profile() {
       });
       return;
     }
-    if (!currentPassword) {
-      addToast({
-        title: "Current password required",
-        severity: "warning",
-      });
-      return;
-    }
 
     setUpdatingPassword(true);
 
-    // Verify current password first
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password: currentPassword,
-    });
-
-    if (signInError) {
-      setUpdatingPassword(false);
-      addToast({
-        title: "Incorrect current password",
-        description: signInError.message,
-        severity: "danger",
-      });
-      return;
-    }
-
     const { error } = await supabase.auth.updateUser({ password: newPassword });
+    
     setUpdatingPassword(false);
 
     if (error) {
@@ -163,7 +140,6 @@ export default function Profile() {
       addToast({ title: "Password updated", severity: "success" });
       setNewPassword("");
       setConfirmPassword("");
-      setCurrentPassword("");
     }
   };
 
@@ -391,17 +367,6 @@ export default function Profile() {
                     Change Password
                   </h4>
                   <div className="space-y-4">
-                    <Input
-                      label="Current Password"
-                      placeholder="••••••••"
-                      type="password"
-                      value={currentPassword}
-                      onValueChange={setCurrentPassword}
-                      variant="bordered"
-                      startContent={
-                        <KeyRound size={16} className="text-default-400" />
-                      }
-                    />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Input
                         label="New Password"
@@ -425,7 +390,7 @@ export default function Profile() {
                     onPress={handleUpdatePassword}
                     isLoading={updatingPassword}
                     isDisabled={
-                      !newPassword || !confirmPassword || !currentPassword
+                      !newPassword || !confirmPassword
                     }
                     variant="flat"
                     color="primary"

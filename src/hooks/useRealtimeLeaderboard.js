@@ -32,10 +32,10 @@ export function useRealtimeLeaderboard(eventId, setTeams, options = {}) {
             const currentUserId = options.currentUserId;
             const teamOwner = payload.new?.created_by || payload.old?.created_by;
             if (currentUserId && teamOwner === currentUserId) {
-              playNotificationSound('leaderboard.wav');
+              //playNotificationSound('leaderboard.wav'); /// cab be annoying if too frequent
               sendPushNotification({
                 title: 'Leaderboard Update',
-                body: 'Your team just moved on the leaderboard.',
+                body: 'Your team just moved on the leaderboard to position ' + (payload.new?.rank || 'unknown') + ' at ' + new Date().toLocaleTimeString() + '.',
                 tag: `leaderboard-${eventId}`,
                 data: { eventId, teamId: payload.new?.id || payload.old?.id },
               });
