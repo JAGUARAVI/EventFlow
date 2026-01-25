@@ -22,7 +22,7 @@ export default function Landing() {
             <div className="relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-sunset-blue/20 via-transparent to-sunset-purple/20 dark:from-sunset-blue/10 dark:to-sunset-purple/10 -z-10" />
 
-                <div className="max-w-6xl mx-auto px-6 pt-24 pb-20">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-24 pb-20">
                     <div className="flex flex-col items-center text-center gap-8 max-w-4xl mx-auto">
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-1000">
                             <div className="inline-flex px-3 py-1 rounded-full border border-sunset-orange/30 bg-sunset-orange/10 text-sunset-orange text-xs font-medium uppercase tracking-wider mb-2">

@@ -1235,10 +1235,10 @@ export default function EventPage() {
         )}
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 relative z-20 pb-12">
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 relative z-20 pb-12">
         {/* Event Header Card */}
         <Card className="border-none shadow-xl mb-8 bg-background/80 backdrop-blur-md">
-          <CardBody className="p-6 md:p-8 flex flex-col md:flex-row gap-6 justify-between items-start">
+          <CardBody className="p-3 md:p-8 flex flex-col md:flex-row gap-4 md:gap-6 justify-between items-start">
             <div className="space-y-4 flex-1">
               <div>
                 <div className="flex items-center gap-2 mb-2">
@@ -1261,7 +1261,7 @@ export default function EventPage() {
                     {event?.visibility}
                   </Chip>
                 </div>
-                <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-linear-to-r from-foreground to-default-500 p-2">
+                <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-linear-to-r from-foreground to-default-500 p-0 md:p-2">
                   {event?.name}
                 </h1>
               </div>
@@ -1411,18 +1411,18 @@ export default function EventPage() {
                 tabList:
                   "gap-6 w-full relative rounded-none p-0 border-b border-divider",
                 cursor: "w-full bg-primary",
-                tab: "max-w-fit px-6 h-12 text-default-500",
+                tab: "max-w-fit px-4 sm:px-6 h-12 text-default-500",
                 tabContent:
                   "group-data-[selected=true]:text-primary font-medium",
               }}
               selectedKey={searchParams.get("tab") || "details"}
               onSelectionChange={(key) => setSearchParams({ tab: key })}
             >
-              <Tab key="details" title="Details" className="p-6">
+              <Tab key="details" title="Details" className="p-3 md:p-6">
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
-                      <CardBody className="p-4 flex flex-row items-center gap-4">
+                      <CardBody className="p-3 sm:p-4 flex flex-row items-center gap-4">
                         <div className="p-2 rounded-lg bg-primary/10 text-primary">
                           <Users size={20} />
                         </div>
@@ -1435,7 +1435,7 @@ export default function EventPage() {
                       </CardBody>
                     </Card>
                     <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
-                      <CardBody className="p-4 flex flex-row items-center gap-4">
+                      <CardBody className="p-3 sm:p-4 flex flex-row items-center gap-4">
                         <div className="p-2 rounded-lg bg-secondary/10 text-secondary">
                           <Gavel size={20} />
                         </div>
@@ -1448,7 +1448,7 @@ export default function EventPage() {
                       </CardBody>
                     </Card>
                     <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
-                      <CardBody className="p-4 flex flex-row items-center gap-4">
+                      <CardBody className="p-3 sm:p-4 flex flex-row items-center gap-4">
                         <div className="p-2 rounded-lg bg-warning/10 text-warning">
                           <Trophy size={20} />
                         </div>
@@ -1461,7 +1461,7 @@ export default function EventPage() {
                       </CardBody>
                     </Card>
                     <Card className="border-none shadow-sm bg-default-50 hover:bg-default-100 transition-colors">
-                      <CardBody className="p-4 flex flex-row items-center gap-4">
+                      <CardBody className="p-3 sm:p-4 flex flex-row items-center gap-4">
                         <div className="p-2 rounded-lg bg-success/10 text-success">
                           <BarChart2 size={20} />
                         </div>
@@ -1476,7 +1476,7 @@ export default function EventPage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="p-6 rounded-xl bg-content2/50  border border-default-200/50 space-y-4">
+                    <div className="p-3 md:p-6 rounded-xl bg-content2/50  border border-default-200/50 space-y-4">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
                         <Info size={18} /> About Event
                       </h3>
@@ -1509,8 +1509,8 @@ export default function EventPage() {
                       </div>
                     </div>
 
-                    {canManage && (
-                      <div className="p-6 rounded-xl bg-content2/50 border border-default-200/50">
+                      {canManage && (
+                      <div className="p-3 md:p-6 rounded-xl bg-content2/50 border border-default-200/50">
                         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                           <Shield size={18} /> Admin Controls
                         </h3>
@@ -1558,14 +1558,14 @@ export default function EventPage() {
                   </div>
                 </div>
               </Tab>
-              <Tab key="announcements" title="Announcements" className="p-6">
+              <Tab key="announcements" title="Announcements" className="p-3 md:p-6">
                 <AnnouncementsFeed
                   eventId={id}
                   currentUserId={user?.id}
                   canManage={canManage}
                 />
               </Tab>
-              <Tab key="teams" title="Teams" className="p-6">
+              <Tab key="teams" title="Teams" className="p-3 md:p-6">
                 <div className="space-y-6">
                   <div className="flex flex-col sm:flex-row justify-between gap-4 items-center">
                     <div className="w-full sm:w-auto flex-1 max-w-md">
@@ -1766,10 +1766,10 @@ export default function EventPage() {
               </Tab>
               {hasType("bracket") && (
                 <Tab
-                  key="bracket"
-                  title="Bracket"
-                  className="p-6"
-                >
+                    key="bracket"
+                    title="Bracket"
+                    className="p-3 md:p-6"
+                  >
                   <div className="space-y-6">
                     <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                       <div>
@@ -1851,8 +1851,8 @@ export default function EventPage() {
 
                     <Card className="border-none bg-default-50/50 shadow-none">
                       <CardBody className="p-0 overflow-hidden">
-                        {matches.length === 0 ? (
-                          <div className="text-center py-24 text-default-400 bg-default-50 rounded-xl border border-dashed border-default-200">
+                          {matches.length === 0 ? (
+                          <div className="text-center py-20 text-default-400 bg-default-50 rounded-xl border border-dashed border-default-200">
                             <div className="bg-default-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
                               <Trophy size={40} className="opacity-20" />
                             </div>
@@ -1865,7 +1865,7 @@ export default function EventPage() {
                             </p>
                           </div>
                         ) : (
-                          <div className="overflow-x-auto p-6 pb-8 min-h-[400px]">
+                          <div className="overflow-x-auto p-3 md:p-6 pb-8 min-h-[400px]">
                             <BracketView
                               matches={matches}
                               teams={teams}
@@ -1885,7 +1885,7 @@ export default function EventPage() {
               )}
 
               {hasType("points") && (
-                <Tab key="leaderboard" title="Leaderboard" className="p-6">
+                <Tab key="leaderboard" title="Leaderboard" className="p-3 md:p-6">
                   <div className="flex justify-end mb-4 gap-2">
                     {canJudge && (
                       <Button
@@ -1918,7 +1918,7 @@ export default function EventPage() {
               )}
 
               {showJudges && (
-                <Tab key="judges" title="Judges" className="p-6">
+                <Tab key="judges" title="Judges" className="p-3 md:p-6">
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <h3 className="text-lg font-semibold">Event Judges</h3>
@@ -1951,7 +1951,7 @@ export default function EventPage() {
               )}
 
               {hasType("poll") && (
-                <Tab key="polls" title="Polls" className="p-6">
+                <Tab key="polls" title="Polls" className="p-3 md:p-6">
                   <div className="space-y-6">
                     <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
                       <Input
@@ -2003,7 +2003,7 @@ export default function EventPage() {
                         )}
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-6">
+                          <div className="grid grid-cols-1 gap-4">
                         {polls
                           .filter(
                             (p) =>
@@ -2017,7 +2017,7 @@ export default function EventPage() {
                               key={poll.id}
                               className="border border-default-200 bg-content1/50"
                             >
-                              <CardBody className="p-6 space-y-4">
+                              <CardBody className="p-3 md:p-6 space-y-3">
                                 <div className="flex flex-col md:flex-row justify-between gap-4">
                                   <div>
                                     <div className="flex items-center gap-2 mb-2">
