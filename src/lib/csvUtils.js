@@ -118,6 +118,146 @@ export function exportPollsToCSV(polls, votes = []) {
 }
 
 /**
+ * Advanced export for polls including statistical analysis
+ * - For each poll: totals, per-option counts & percentages
+ * - For numeric polls (vote_to_points): mean, median, stddev, min, max
+ * - Entropy of distribution as a measure of dispersion
+ * - Raw votes listing and simple time-bucketed counts (per-minute)
+ */
+export function exportPollsAnalysisToCSV(polls, votes = []) {
+  if (!polls || polls.length === 0) return "";
+
+  const lines = [];
+
+  const safe = (v) => (v === null || v === undefined ? "" : v);
+
+  // helper stats
+  const numericStats = (arr) => {
+    const n = arr.length;
+    if (n === 0) return { count: 0 };
+    const nums = arr.map(Number).filter((x) => !Number.isNaN(x));
+    const count = nums.length;
+    const mean = nums.reduce((s, x) => s + x, 0) / count;
+    const sorted = nums.slice().sort((a, b) => a - b);
+    const median = count % 2 === 1 ? sorted[(count - 1) / 2] : (sorted[count / 2 - 1] + sorted[count / 2]) / 2;
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const variance = nums.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / count;
+    const stddev = Math.sqrt(variance);
+    // mode (may be multiple, return most frequent)
+    const freq = {};
+    nums.forEach((x) => (freq[x] = (freq[x] || 0) + 1));
+    let mode = null;
+    let modeCount = 0;
+    Object.keys(freq).forEach((k) => {
+      if (freq[k] > modeCount) {
+        modeCount = freq[k];
+        mode = Number(k);
+      }
+    });
+    return { count, mean, median, stddev, variance, min, max, mode };
+  };
+
+  const shannonEntropy = (counts) => {
+    const total = Object.values(counts).reduce((s, v) => s + v, 0);
+    if (total === 0) return 0;
+    let e = 0;
+    Object.values(counts).forEach((c) => {
+      if (c <= 0) return;
+      const p = c / total;
+      e -= p * Math.log2(p);
+    });
+    return e;
+  };
+
+  polls.forEach((poll) => {
+    lines.push(`Poll:,${escapeCSV(poll.question || '')}`);
+    lines.push(`Poll ID:,${poll.id}`);
+    lines.push(`Type:,${poll.poll_type || ''}`);
+    lines.push(`Status:,${poll.status || ''}`);
+    lines.push(`Created At:,${poll.created_at || ''}`);
+
+    const pollVotes = votes.filter((v) => v.poll_id === poll.id);
+
+    // prepare option map
+    const optionMap = {};
+    poll.options?.forEach((opt) => {
+      optionMap[opt.id] = { label: opt.label, points: opt.points || 0, count: 0 };
+    });
+
+    // collect numeric values for numeric polls
+    const numericValuesByOption = {};
+    pollVotes.forEach((v) => {
+      if (!optionMap[v.option_id]) return;
+      optionMap[v.option_id].count = (optionMap[v.option_id].count || 0) + 1;
+      if (poll.poll_type === 'vote_to_points' && v.value !== undefined) {
+        numericValuesByOption[v.option_id] = numericValuesByOption[v.option_id] || [];
+        numericValuesByOption[v.option_id].push(Number(v.value));
+      }
+    });
+
+    const totalVotes = pollVotes.length;
+
+    lines.push(`Total Votes:,${totalVotes}`);
+    lines.push('');
+
+    // Option summary
+    lines.push('Option,Count,Percentage,Points');
+    Object.values(optionMap).forEach((o) => {
+      const pct = totalVotes > 0 ? ((o.count / totalVotes) * 100).toFixed(2) + '%' : '0%';
+      lines.push(`${escapeCSV(o.label)},${o.count},${pct},${safe(o.points)}`);
+    });
+
+    // Entropy as distribution metric
+    const countsForEntropy = {};
+    Object.values(optionMap).forEach((o) => (countsForEntropy[o.label] = o.count));
+    lines.push(`Entropy (bits),${shannonEntropy(countsForEntropy).toFixed(4)}`);
+
+    // Numeric analysis for vote_to_points
+    if (poll.poll_type === 'vote_to_points') {
+      lines.push('');
+      lines.push('Option,Count,Mean,Median,StdDev,Min,Max,Mode');
+      Object.entries(optionMap).forEach(([optId, o]) => {
+        const nums = numericValuesByOption[optId] || [];
+        const s = numericStats(nums);
+        lines.push(`${escapeCSV(o.label)},${s.count || 0},${safe(s.mean?.toFixed?.(3) ?? '')},${safe(s.median ?? '')},${safe(s.stddev?.toFixed?.(3) ?? '')},${safe(s.min ?? '')},${safe(s.max ?? '')},${safe(s.mode ?? '')}`);
+      });
+    }
+
+    // Time-bucket simple analysis: votes per minute (ISO minute)
+    if (pollVotes.length > 0) {
+      const perMinute = {};
+      pollVotes.forEach((v) => {
+        const t = v.created_at ? new Date(v.created_at) : null;
+        if (!t) return;
+        const key = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')} ${String(t.getUTCHours()).padStart(2,'0')}:${String(t.getUTCMinutes()).padStart(2,'0')}`;
+        perMinute[key] = (perMinute[key] || 0) + 1;
+      });
+
+      lines.push('');
+      lines.push('Time Bucket (UTC minute),Votes');
+      Object.keys(perMinute).sort().forEach((k) => lines.push(`${k},${perMinute[k]}`));
+    }
+
+    // Raw vote dump
+    lines.push('');
+    lines.push('Raw Votes:');
+    lines.push('Vote ID,User ID,Option ID,Option Label,Value,Created At');
+    pollVotes.forEach((v) => {
+      const opt = optionMap[v.option_id] || { label: '' };
+      lines.push(`${v.id || ''},${v.user_id || ''},${v.option_id || ''},${escapeCSV(opt.label || '')},${safe(v.value)},${v.created_at || ''}`);
+    });
+
+    // Separator between polls
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+  });
+
+  return lines.join('\n');
+}
+
+/**
  * Import teams from CSV
  * Expects columns: Team Name, Score (optional), Description (optional)
  * @param {string} csvContent - Raw CSV text

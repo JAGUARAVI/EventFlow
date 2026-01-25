@@ -11,6 +11,7 @@ export default function MetadataFieldsForm({
   eventId,
   teamMetadata = {},
   onMetadataChange,
+  onValidationChange,
   disabled = false,
 }) {
   const [template, setTemplate] = useState(null);
@@ -19,6 +20,21 @@ export default function MetadataFieldsForm({
   useEffect(() => {
     loadTemplate();
   }, [eventId]);
+
+  useEffect(() => {
+    if (!template || !template.fields_json || template.fields_json.length === 0) {
+        onValidationChange?.(true);
+        return;
+    }
+
+    const isValid = template.fields_json.every(field => {
+        if (!field.required) return true;
+        const value = teamMetadata[field.id];
+        return value !== undefined && value !== null && String(value).trim() !== '';
+    });
+
+    onValidationChange?.(isValid);
+  }, [template, teamMetadata, onValidationChange]);
 
   const loadTemplate = async () => {
     if (!eventId) {

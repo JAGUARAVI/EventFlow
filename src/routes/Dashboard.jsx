@@ -35,7 +35,10 @@ export default function Dashboard() {
 
     // Keep HEAD Logic: useCallback wrapper for fetching
     const fetchDashboardData = useCallback(async (showLoading = true) => {
-        if (!user?.id || !profile?.role) return;
+        if (!user?.id || !profile?.role) {
+            setLoading(false);
+            return;
+        }
         if (showLoading) setLoading(true);
 
         try {
@@ -49,7 +52,7 @@ export default function Dashboard() {
                     ? baseEventsQuery
                     : isViewer
                         ? baseEventsQuery.eq("visibility", "public")
-                        : baseEventsQuery.eq("created_by", user.id),
+                        : baseEventsQuery.or(`created_by.eq.${user.id},visibility.eq.public`),
                 supabase
                     .from("event_judges")
                     .select("event_id")

@@ -42,10 +42,21 @@ function readInitialColors() {
   }
 }
 
+const PREDEFINED_AND_CUSTOM_KEY = 'eventflow-theme-preset';
+
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
   const [isDark, setIsDark] = useState(readInitialMode);
+  // Theme name: 'modern', 'sunset' (default), etc.
+  const [themeName, setThemeName] = useState(() => {
+     try {
+         return localStorage.getItem(PREDEFINED_AND_CUSTOM_KEY) || 'sunset';
+     } catch {
+         return 'sunset';
+     }
+  });
+
   const [colors, setColors] = useState(readInitialColors);
 
   // Apply theme colors to CSS variables
@@ -55,13 +66,12 @@ export function ThemeProvider({ children }) {
     // Apply dark/light mode
     root.classList.toggle('dark', isDark);
     
-    // Apply color variables
+    // Apply color variables - ONLY IF using custom theme or overriding
+    // For predefined themes controlled by className, we might not need this unless we want manual overrides.
+    // For now, keeping it but it might be redundant if class handles everything.
     Object.entries(colors).forEach(([key, value]) => {
       const varName = COLOR_VAR_MAP[key] || `--color-${key}`;
-      //root.style.setProperty(varName, value);
-
-      // Also set the --color- version for backwards compatibility/custom usage
-      //root.style.setProperty(`--color-${key}`, value);
+      // root.style.setProperty(varName, value);
     });
   }, [isDark, colors]);
 
@@ -70,6 +80,13 @@ export function ThemeProvider({ children }) {
     try {
       localStorage.setItem(STORAGE_KEY, value ? 'dark' : 'light');
     } catch (_) {}
+  }, []);
+
+  const setThemePreset = useCallback((name) => {
+      setThemeName(name);
+      try {
+          localStorage.setItem(PREDEFINED_AND_CUSTOM_KEY, name);
+      } catch (_) {}
   }, []);
 
   const updateColors = useCallback((newColors) => {
@@ -92,6 +109,8 @@ export function ThemeProvider({ children }) {
       value={{ 
         isDark, 
         setDark,
+        themeName,
+        setThemePreset,
         colors,
         updateColors,
         resetColors,

@@ -21,11 +21,12 @@ import {
     User,
     LogOut,
     Settings,
+    Palette
 } from "lucide-react";
 
 export default function Navbar() {
     const { user, profile, signOut } = useAuth();
-    const { isDark, setDark } = useTheme();
+    const { isDark, setDark, setThemePreset, themeName } = useTheme();
     const location = useLocation();
 
     const displayName = profile?.display_name || user?.email || "User";
@@ -56,7 +57,7 @@ export default function Navbar() {
             }}
         >
             <NavbarBrand as={Link} to="/" className="gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-xl shadow-lg invert dark:invert-0">
                     E
                 </div>
                 <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-default-500">
@@ -77,6 +78,28 @@ export default function Navbar() {
                     </NavbarItem>
                 )}
 
+                <NavbarItem>
+                    <Dropdown>
+                        <DropdownTrigger>
+                            <Button variant="light" isIconOnly tooltip="Change Theme">
+                                <Palette size={20} className="text-default-500" />
+                            </Button>
+                        </DropdownTrigger>
+                        <DropdownMenu 
+                            aria-label="Theme Selection"
+                            selectionMode="single" 
+                            selectedKeys={new Set([themeName])}
+                            onSelectionChange={(keys) => {
+                                const selected = Array.from(keys)[0];
+                                if (selected) setThemePreset(selected);
+                            }}
+                        >
+                            <DropdownItem key="modern">Modern</DropdownItem>
+                            <DropdownItem key="sunset">Sunset</DropdownItem>
+                            <DropdownItem key="coffee">Coffee</DropdownItem>
+                        </DropdownMenu>
+                    </Dropdown>
+                </NavbarItem>
                 <NavbarItem>
                     <Switch
                         isSelected={isDark}

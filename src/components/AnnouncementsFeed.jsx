@@ -229,7 +229,7 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
             {announcements.map((announcement) => (
               <div key={announcement.id}>
                 <Card isBlurred={announcement.pinned} className={announcement.pinned ? 'bg-warning-50' : ''}>
-                  <CardBody className="gap-3">
+                  <CardBody className="gap-4">
                     <div className="flex justify-between items-start gap-2">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
@@ -300,7 +300,7 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
                     </div>
                   </CardBody>
                 </Card>
-                <Divider className="mt-4" />
+                {/*<Divider className="mt-4" />*/}
               </div>
             ))}
           </div>

@@ -1,198 +1,130 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
+  Modal, 
+  ModalContent, 
+  ModalHeader, 
+  ModalBody, 
+  ModalFooter,
   Button,
-  Card,
-  CardBody,
-  Input,
-  Divider,
+  RadioGroup,
+  Radio,
+  cn
 } from '@heroui/react';
-import { Palette, RotateCcw } from 'lucide-react';
-import { useTheme, COLOR_VAR_MAP } from '../context/ThemeContext';
+import { supabase } from '../lib/supabase';
 
-export default function ThemeBuilder({ isOpen, onOpenChange, initialColors, onSave }) {
-  const { colors, updateColors, resetColors, defaultColors } = useTheme();
-  const [tempColors, setTempColors] = useState(initialColors || colors);
-  const savedRef = useRef(false);
+export default function ThemeBuilder({ isOpen, onOpenChange, eventId, currentTheme, onSave }) {
+  const [selectedTheme, setSelectedTheme] = useState(currentTheme || 'modern');
+  const [loading, setLoading] = useState(false);
 
-  // Update tempColors when initialColors changes (for event themes)
   useEffect(() => {
-    if (initialColors) {
-      setTempColors(initialColors);
+    if (currentTheme) {
+        setSelectedTheme(currentTheme);
     }
-  }, [initialColors]);
+  }, [currentTheme, isOpen]);
 
-  // Live preview and cleanup
-  useEffect(() => {
-    const root = document.documentElement;
-    // Apply temporary colors for preview
-    Object.entries(tempColors).forEach(([key, value]) => {
-      const varName = COLOR_VAR_MAP[key] || `--color-${key}`;
-      //root.style.setProperty(varName, value);
-      // Keep legacy support for now
-      //root.style.setProperty(`--color-${key}`, value);
-    });
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      // Fetch current settings to preserve other keys
+      const { data: event, error: fetchError } = await supabase
+        .from('events')
+        .select('settings')
+        .eq('id', eventId)
+        .single();
+      
+      if (fetchError) throw fetchError;
 
-    return () => {
-      // On unmount or change, if not saved, revert to original
-      // This runs before the next effect or on unmount
-      if (!savedRef.current) {
-        // If we are unmounting permanently (modal closed without save), this reverts.
-        // If just re-rendering (color change), the next effect immediately re-applies tempColors.
-      }
-    };
-  }, [tempColors]);
+      const currentSettings = event.settings || {};
+      const newSettings = { ...currentSettings, theme: selectedTheme };
 
-  // Handle final cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (!savedRef.current) {
-        const root = document.documentElement;
-        // Revert to initial state (either event specific or global)
-        const target = initialColors || colors;
-        Object.entries(target).forEach(([key, value]) => {
-           const varName = COLOR_VAR_MAP[key] || `--color-${key}`;
-           if(value) {
-             //root.style.setProperty(varName, value);
-             //root.style.setProperty(`--color-${key}`, value);
-           } else {
-             //root.style.removeProperty(varName);
-             //root.style.removeProperty(`--color-${key}`);
-           }
-        });
-      }
-    };
-  }, []); // Run once on mount, cleanup on unmount
-
-  const handleColorChange = (key, value) => {
-    setTempColors(prev => ({ ...prev, [key]: value }));
-  };
-
-  const handleApply = () => {
-    savedRef.current = true;
-    if (onSave) {
-      // Event-specific theme save - DO NOT update global localStorage
-      onSave(tempColors);
-    } else {
-      // Global theme save
-      updateColors(tempColors);
+        const { error } = await supabase
+        .from('events')
+        .update({ settings: newSettings })
+        .eq('id', eventId);
+      
+      if (error) throw error;
+      
+      onSave(selectedTheme);
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Error saving theme:', error);
+    } finally {
+      setLoading(false);
     }
-    if (onOpenChange) onOpenChange(false);
   };
 
-  const handleCancel = () => {
-    // Revert logic handled by unmount effect, but we can also be explicit
-    setTempColors(initialColors || colors); // Updates state, triggering effect
-    if (onOpenChange) onOpenChange(false);
-  };
-
-  const handleReset = () => {
-    setTempColors(defaultColors);
-    updateColors(defaultColors); // Also update global theme to reflect changes
-  };
-
-  const colorLabels = {
-    primary: 'Primary',
-    secondary: 'Secondary',
-    accent: 'Accent',
-    neutral: 'Neutral',
-    surface: 'Surface',
-    background: 'Background',
+  const CustomRadio = (props) => {
+    const {children, ...otherProps} = props;
+    return (
+      <Radio
+        {...otherProps}
+        classNames={{
+          base: cn(
+            "inline-flex m-0 bg-content1 hover:bg-content2 items-center justify-between",
+            "flex-row-reverse max-w-full cursor-pointer rounded-lg gap-4 p-4 border-2 border-transparent",
+            "data-[selected=true]:border-primary"
+          ),
+        }}
+      >
+        {children}
+      </Radio>
+    );
   };
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-default-600">
-        {onSave ? 'Customize event colors. Changes will be visible to all viewers.' : 'Customize your theme colors. Changes are saved locally.'}
-      </p>
-
-      <Divider />
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {Object.entries(colorLabels).map(([key, label]) => (
-          <Card key={key} isBlurred>
-            <CardBody className="gap-3">
-              <div className="flex items-center justify-between">
-                <label className="font-semibold text-sm">{label}</label>
-                <div
-                  className="w-8 h-8 rounded border-2 border-default-300 cursor-pointer"
-                  style={{ backgroundColor: tempColors[key] }}
-                  title={tempColors[key]}
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Input
-                  type="text"
-                  size="sm"
-                  value={tempColors[key]}
-                  onChange={(e) => handleColorChange(key, e.target.value)}
-                  placeholder="#000000"
-                />
-                <input
-                  type="color"
-                  value={tempColors[key]}
-                  onChange={(e) => handleColorChange(key, e.target.value)}
-                  className="w-10 h-10 cursor-pointer border border-default-300 rounded"
-                />
-              </div>
-
-              {tempColors[key] !== defaultColors[key] && (
-                <Button
-                  size="sm"
-                  variant="flat"
-                  onPress={() => handleColorChange(key, defaultColors[key])}
-                >
-                  Reset to default
-                </Button>
-              )}
-            </CardBody>
-          </Card>
-        ))}
-      </div>
-
-      <Divider />
-
-      <div>
-        <h4 className="font-semibold text-sm mb-2">Preview</h4>
-        <Card isBlurred>
-          <CardBody className="gap-3">
-            <div className="flex gap-2 flex-wrap">
-              {Object.entries(colorLabels).map(([key, label]) => (
-                <div key={key}>
-                  <div
-                    className="w-12 h-12 rounded flex items-center justify-center text-white text-xs font-semibold"
-                    style={{ backgroundColor: tempColors[key] }}
-                    title={label}
+    <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+      <ModalContent>
+        {(onClose) => (
+          <>
+            <ModalHeader className="flex flex-col gap-1">Select Event Theme</ModalHeader>
+            <ModalBody>
+              <RadioGroup
+                description="Choose a theme to apply to this event page."
+                value={selectedTheme}
+                onValueChange={setSelectedTheme}
+              >
+                <CustomRadio description="Default dark/light appearance" value="modern">
+                  Modern
+                </CustomRadio>
+                <CustomRadio description="Brand colors (Deep Blue & Hot Pink)" value="sunset">
+                  Sunset
+                </CustomRadio>
+                <CustomRadio description="Rich brown tones with a cozy feel" value="coffee">
+                  Coffee
+                </CustomRadio>
+              </RadioGroup>
+              
+              <div className="mt-4 p-4 rounded-lg border border-default-200">
+                <h4 className="text-small font-bold mb-2">Preview</h4>
+                <div className={cn(
+                  "p-4 rounded-md transition-colors",
+                  selectedTheme === 'sunset' ? "bg-[#0D1164] text-white" : "bg-content1 text-foreground"
+                )}>
+                  <p className="font-bold">Event Title</p>
+                  <Button 
+                    size="sm" 
+                    className={cn(
+                      "mt-2",
+                       selectedTheme === 'sunset' ? "bg-[#EA2264] text-white" : "bg-primary text-primary-foreground"
+                    )}
                   >
-                    {label.charAt(0)}
-                  </div>
-                  <p className="text-xs text-default-600 text-center mt-1">{label}</p>
+                    Action
+                  </Button>
                 </div>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
-      </div>
+              </div>
 
-      <div className="flex justify-end gap-2 pt-4">
-        <Button
-          isIconOnly
-          color="default"
-          variant="light"
-          onPress={handleReset}
-          title="Reset all to default"
-        >
-          <RotateCcw size={18} />
-        </Button>
-
-        <Button
-          color="primary"
-          onPress={handleApply}
-          startContent={<Palette size={16} />}
-        >
-          Apply Theme
-        </Button>
-      </div>
-    </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button color="danger" variant="light" onPress={onClose}>
+                Cancel
+              </Button>
+              <Button color="primary" onPress={handleSave} isLoading={loading}>
+                Save Theme
+              </Button>
+            </ModalFooter>
+          </>
+        )}
+      </ModalContent>
+    </Modal>
   );
 }
