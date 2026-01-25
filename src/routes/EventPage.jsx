@@ -67,6 +67,7 @@ import {
   Activity,
   Eye,
   Mail,
+  QrCode,
 } from "lucide-react";
 import { supabase, withRetry, checkConnectionHealth, reconnectRealtime } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
@@ -235,6 +236,11 @@ export default function EventPage() {
     isOpen: isPocOpen,
     onOpen: onPocOpen,
     onClose: onPocClose,
+  } = useDisclosure();
+  const {
+    isOpen: isQrOpen,
+    onOpen: onQrOpen,
+    onClose: onQrClose,
   } = useDisclosure();
   const [selectedPoc, setSelectedPoc] = useState(null);
   const [pocLoading, setPocLoading] = useState(false);
@@ -1663,21 +1669,41 @@ export default function EventPage() {
                 </div>
               ) : null}
 
-              <Button
-                variant="flat"
-                color="success"
-                startContent={<Share2 size={16} />}
-                onPress={() => {
-                  const url = `${window.location.origin}/events/${id}`;
-                  navigator.clipboard.writeText(url);
-                  addToast({
-                    title: "Event link copied to clipboard",
-                    severity: "success",
-                  });
-                }}
-              >
-                Share Event Link
-              </Button>
+              <Dropdown>
+                <DropdownTrigger>
+                  <Button
+                    variant="flat"
+                    color="success"
+                    startContent={<Share2 size={16} />}
+                    endContent={<ChevronDown size={14} />}
+                  >
+                    Share Event
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu aria-label="Share options">
+                  <DropdownItem
+                    key="copy"
+                    startContent={<Copy size={14} />}
+                    onPress={() => {
+                      const url = `${window.location.origin}/events/${id}`;
+                      navigator.clipboard.writeText(url);
+                      addToast({
+                        title: "Event link copied to clipboard",
+                        severity: "success",
+                      });
+                    }}
+                  >
+                    Copy Link
+                  </DropdownItem>
+                  <DropdownItem
+                    key="qr"
+                    startContent={<QrCode size={14} />}
+                    onPress={onQrOpen}
+                  >
+                    Show QR Code
+                  </DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
             </div>
           </CardBody>
         </Card>
@@ -2892,6 +2918,67 @@ export default function EventPage() {
           fetch();
         }}
       />
+
+      {/* QR Code Modal */}
+      <Modal isOpen={isQrOpen} onClose={onQrClose} size="sm">
+        <ModalContent>
+          <ModalHeader className="flex items-center gap-2">
+            <QrCode size={20} />
+            Event QR Code
+          </ModalHeader>
+          <ModalBody className="items-center pb-6">
+            <div className="bg-white p-4 rounded-xl shadow-inner">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}/events/${id}`)}`}
+                alt="Event QR Code"
+                width={200}
+                height={200}
+                className="block"
+              />
+            </div>
+            <p className="text-sm text-default-500 text-center mt-4">
+              Scan this QR code to open the event page
+            </p>
+            <p className="text-xs text-default-400 text-center font-mono break-all px-4">
+              {`${window.location.origin}/events/${id}`}
+            </p>
+          </ModalBody>
+          <ModalFooter className="justify-center gap-2">
+            <Button
+              variant="flat"
+              startContent={<Copy size={14} />}
+              onPress={() => {
+                const url = `${window.location.origin}/events/${id}`;
+                navigator.clipboard.writeText(url);
+                addToast({
+                  title: "Link copied to clipboard",
+                  severity: "success",
+                });
+              }}
+            >
+              Copy Link
+            </Button>
+            <Button
+              color="primary"
+              startContent={<Download size={14} />}
+              onPress={() => {
+                const link = document.createElement('a');
+                link.href = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`${window.location.origin}/events/${id}`)}`;
+                link.download = `event-${id}-qr.png`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                addToast({
+                  title: "QR code downloaded",
+                  severity: "success",
+                });
+              }}
+            >
+              Download
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
     </div>
   );
