@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import {
   Tabs,
+  Spinner,
   Tab,
   Button,
   Input,
@@ -64,6 +65,8 @@ import {
   Shield,
   Info,
   Activity,
+  Eye,
+  Mail,
 } from "lucide-react";
 import { supabase, withRetry, checkConnectionHealth, reconnectRealtime } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
@@ -228,6 +231,13 @@ export default function EventPage() {
     onOpen: onMetadataOpen,
     onClose: onMetadataClose,
   } = useDisclosure();
+  const {
+    isOpen: isPocOpen,
+    onOpen: onPocOpen,
+    onClose: onPocClose,
+  } = useDisclosure();
+  const [selectedPoc, setSelectedPoc] = useState(null);
+  const [pocLoading, setPocLoading] = useState(false);
 
   const role = profile?.role || "";
   const isAdmin = role === "admin";
@@ -646,6 +656,75 @@ export default function EventPage() {
     addToast({ title: "Bracket regenerated", severity: "success" });
   };
 
+  // Swiss bracket: Generate next round after current round is completed
+  const handleGenerateNextSwissRound = async () => {
+    if (!teams || teams.length === 0) {
+      addToast({
+        title: "No teams",
+        description: "Add teams first",
+        severity: "warning",
+      });
+      return;
+    }
+
+    // Determine current round number (highest round in matches)
+    const currentRound = Math.max(...matches.map((m) => m.round), -1);
+    
+    // Check if all matches in current round are completed
+    const currentRoundMatches = matches.filter((m) => m.round === currentRound);
+    const allCompleted = currentRoundMatches.every((m) => m.status === "completed");
+    
+    if (!allCompleted) {
+      addToast({
+        title: "Round not complete",
+        description: "Complete all matches in the current round first",
+        severity: "warning",
+      });
+      return;
+    }
+
+    setGeneratingBracket(true);
+    
+    // Generate next round with all existing matches for record calculation
+    const nextRound = currentRound + 1;
+    const generated = generateSwiss(id, teams, nextRound, matches);
+    
+    if (generated.length === 0) {
+      setGeneratingBracket(false);
+      addToast({
+        title: "Cannot generate round",
+        description: "Not enough teams to pair for the next round",
+        severity: "warning",
+      });
+      return;
+    }
+    
+    const { error: e } = await supabase.from("matches").insert(generated);
+    setGeneratingBracket(false);
+    
+    if (e) {
+      addToast({
+        title: "Generation failed",
+        description: e.message,
+        severity: "danger",
+      });
+      return;
+    }
+    
+    notifyBracketInclusion(generated);
+    await supabase.from("event_audit").insert({
+      event_id: id,
+      action: "bracket.swiss_round",
+      entity_type: "bracket",
+      message: `Generated Swiss round ${nextRound + 1}`,
+      created_by: user?.id,
+      metadata: { bracket_type: "swiss", round: nextRound },
+    });
+    
+    fetch();
+    addToast({ title: `Swiss round ${nextRound + 1} generated`, severity: "success" });
+  };
+
   const handleEditMatch = (match) => {
     setSelectedMatch(match);
     onMatchOpen();
@@ -896,6 +975,58 @@ export default function EventPage() {
     setTeamName(t.name);
     setTeamMetadata(t.metadata_values || {});
     onTeamOpen();
+  };
+
+  const viewTeamPoc = async (team) => {
+    if (!team.created_by) {
+      setSelectedPoc({ isPlaceholder: true, teamName: team.name });
+      onPocOpen();
+      return;
+    }
+    
+    setPocLoading(true);
+    setSelectedPoc(null);
+    onPocOpen();
+    
+    try {
+      // Fetch user profile
+      const { data: pocProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url, role')
+        .eq('id', team.created_by)
+        .single();
+      
+      if (profileError) throw profileError;
+      
+      // Fetch user email from auth (only available to admins via profiles join or if self)
+      const { data: authUser } = await supabase.auth.admin?.getUserById?.(team.created_by) || {};
+      
+      // Fetch statistics
+      const [eventsOrganized, teamsRegistered, eventsJudged] = await Promise.all([
+        supabase.from('events').select('id', { count: 'exact', head: true }).eq('created_by', team.created_by),
+        supabase.from('teams').select('id', { count: 'exact', head: true }).eq('created_by', team.created_by),
+        supabase.from('event_judges').select('event_id', { count: 'exact', head: true }).eq('user_id', team.created_by),
+      ]);
+      
+      setSelectedPoc({
+        id: pocProfile.id,
+        displayName: pocProfile.display_name,
+        avatarUrl: pocProfile.avatar_url,
+        role: pocProfile.role,
+        email: pocProfile.email|| authUser?.user?.email || null,
+        teamName: team.name,
+        stats: {
+          eventsOrganized: eventsOrganized.count || 0,
+          teamsRegistered: teamsRegistered.count || 0,
+          eventsJudged: eventsJudged.count || 0,
+        },
+      });
+    } catch (err) {
+      console.error('Failed to fetch POC details:', err);
+      setSelectedPoc({ error: true, teamName: team.name });
+    } finally {
+      setPocLoading(false);
+    }
   };
 
   const saveTeam = async () => {
@@ -1507,7 +1638,7 @@ export default function EventPage() {
                   <div className="hidden">
                     <EventCloneDialog
                       isOpen={isCloneOpen}
-                      onOpenChange={onCloneClose}
+                      onOpenChange={(open) => !open && onCloneClose()}
                       event={event}
                       onCloneSuccess={(newEventId) =>
                         navigate(`/events/${newEventId}`)
@@ -1847,6 +1978,12 @@ export default function EventPage() {
                                     </DropdownTrigger>
                                     <DropdownMenu>
                                       <DropdownItem
+                                        startContent={<Eye size={14} />}
+                                        onPress={() => viewTeamPoc(t)}
+                                      >
+                                        View Team POC
+                                      </DropdownItem>
+                                      <DropdownItem
                                         startContent={<Edit3 size={14} />}
                                         onPress={() => openEditTeam(t)}
                                       >
@@ -2001,6 +2138,25 @@ export default function EventPage() {
                               Regenerate
                             </Button>
                           )}
+                          
+                          {/* Swiss: Generate Next Round button */}
+                          {matches.length > 0 && bracketType === "swiss" && (() => {
+                            const currentRound = Math.max(...matches.map((m) => m.round), -1);
+                            const currentRoundMatches = matches.filter((m) => m.round === currentRound);
+                            const allCompleted = currentRoundMatches.length > 0 && currentRoundMatches.every((m) => m.status === "completed");
+                            return allCompleted ? (
+                              <Button
+                                size="sm"
+                                color="success"
+                                isLoading={generatingBracket}
+                                isDisabled={isCompleted}
+                                onPress={handleGenerateNextSwissRound}
+                                startContent={<Plus size={16} />}
+                              >
+                                Round {currentRound + 2}
+                              </Button>
+                            ) : null;
+                          })()}
                         </div>
                       )}
                     </div>
@@ -2069,6 +2225,7 @@ export default function EventPage() {
                     teams={teams}
                     canJudge={canJudge && !isCompleted}
                     onScoreChange={handleScoreChange}
+                    sortOrder={event?.settings?.leaderboard_sort_order || 'desc'}
                   />
                 </Tab>
               )}
@@ -2616,6 +2773,106 @@ export default function EventPage() {
               onPress={handleDeleteEvent}
             >
               Delete Event
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Team POC Modal */}
+      <Modal isOpen={isPocOpen} onClose={onPocClose} size="md">
+        <ModalContent>
+          <ModalHeader>Team POC Details</ModalHeader>
+          <ModalBody>
+            {pocLoading ? (
+              <div className="flex justify-center py-8">
+                <Spinner size="lg" />
+              </div>
+            ) : selectedPoc?.isPlaceholder ? (
+              <div className="text-center py-8">
+                <div className="bg-default-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Users size={32} className="text-default-400" />
+                </div>
+                <p className="text-default-500 font-medium">No POC Assigned</p>
+                <p className="text-sm text-default-400 mt-1">
+                  Team "{selectedPoc.teamName}" was not created by a registered user
+                </p>
+              </div>
+            ) : selectedPoc?.error ? (
+              <div className="text-center py-8">
+                <p className="text-danger">Failed to load POC details</p>
+              </div>
+            ) : selectedPoc ? (
+              <div className="space-y-6">
+                {/* User Info */}
+                <div className="flex items-center gap-4">
+                  <Avatar
+                    src={selectedPoc.avatarUrl}
+                    name={selectedPoc.displayName || 'User'}
+                    size="lg"
+                    className="w-16 h-16"
+                  />
+                  <div>
+                    <h3 className="text-lg font-bold">
+                      {selectedPoc.displayName || 'Unnamed User'}
+                    </h3>
+                    <p className="text-sm text-default-500 capitalize">
+                      {selectedPoc.role?.replace('_', ' ') || 'User'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="space-y-3 bg-default-50 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <Mail size={16} className="text-default-400" />
+                    <div>
+                      <p className="text-xs text-default-400">Email</p>
+                      <p className="text-sm font-medium">
+                        {selectedPoc.email || <span className="text-default-400 italic">Not available</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Hash size={16} className="text-default-400" />
+                    <div>
+                      <p className="text-xs text-default-400">User ID</p>
+                      <p className="text-sm font-mono text-default-600 break-all">
+                        {selectedPoc.id}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Statistics */}
+                <div>
+                  <h4 className="text-sm font-semibold mb-3 text-default-600">Statistics</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-primary/10 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-primary">
+                        {selectedPoc.stats?.eventsOrganized || 0}
+                      </p>
+                      <p className="text-xs text-default-500">Events Organized</p>
+                    </div>
+                    <div className="bg-secondary/10 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-secondary">
+                        {selectedPoc.stats?.teamsRegistered || 0}
+                      </p>
+                      <p className="text-xs text-default-500">Teams Created</p>
+                    </div>
+                    <div className="bg-warning/10 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-warning">
+                        {selectedPoc.stats?.eventsJudged || 0}
+                      </p>
+                      <p className="text-xs text-default-500">Events Judged</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onPocClose}>
+              Close
             </Button>
           </ModalFooter>
         </ModalContent>

@@ -27,11 +27,11 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 
 export default function Profile() {
-  const { user, profile, refreshProfile, signOut } = useAuth();
+  const { user, profile, refreshProfile, signOut, loading: authLoading } = useAuth();
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(!profile);
+  const [loading, setLoading] = useState(true);
 
   // Password update state
   const [newPassword, setNewPassword] = useState("");
@@ -48,13 +48,17 @@ export default function Profile() {
   });
 
   useEffect(() => {
+    // Wait for auth to finish loading
+    if (authLoading) return;
+    
     if (profile) {
       setDisplayName(profile.display_name || "");
       setAvatarUrl(profile.avatar_url || "");
-      setLoading(false);
       fetchStats();
     }
-  }, [profile]);
+    // Always set loading false once auth is done
+    setLoading(false);
+  }, [profile, authLoading]);
 
   const fetchStats = async () => {
     if (!user?.id) return;
