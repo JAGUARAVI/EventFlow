@@ -17,6 +17,7 @@ import {
 import { Pin, PinOff, Trash2, Plus, Edit2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
+import { playNotificationSound, sendPushNotification } from '../lib/notifications';
 import { useAuth } from '../hooks/useAuth';
 
 export default function AnnouncementsFeed({ eventId, canManage = false }) {
@@ -56,6 +57,16 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
           if (payload.eventType === 'INSERT') {
             const author = await fetchProfile(payload.new.created_by);
             setAnnouncements((prev) => [{ ...payload.new, author }, ...prev]);
+
+            if (payload.new.created_by !== user?.id) {
+              playNotificationSound('announcement.wav');
+              sendPushNotification({
+                title: 'New Announcement',
+                body: payload.new.title || 'A new announcement was posted.',
+                tag: `announcement-${payload.new.id}`,
+                data: { eventId, announcementId: payload.new.id },
+              });
+            }
           } else if (payload.eventType === 'UPDATE') {
             setAnnouncements((prev) => {
               const updated = prev.map((a) => {
@@ -84,7 +95,7 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId]);
+  }, [eventId, user?.id]);
 
   const loadAnnouncements = async () => {
     try {

@@ -10,6 +10,7 @@ import {
     CardHeader,
 } from "@heroui/react";
 import { useAuth } from "../hooks/useAuth";
+import { supabase } from "../lib/supabase";
 import { Mail, Lock, Phone, ArrowRight, UserPlus, LogIn } from "lucide-react";
 
 export default function Login() {

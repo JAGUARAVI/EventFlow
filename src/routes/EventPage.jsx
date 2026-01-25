@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   useParams,
   Link,
@@ -97,6 +97,7 @@ import {
 } from "../lib/bracket";
 import { useLiveVotes } from "../hooks/useLiveVotes";
 import { useRealtimePolls } from "../hooks/useRealtimePolls";
+import { sendPushNotification } from "../lib/notifications";
 import { useTheme } from "../context/ThemeContext";
 import confetti from "canvas-confetti";
 
@@ -240,6 +241,11 @@ export default function EventPage() {
   const showAnalytics = canManage || !settings.hide_analytics;
   const showTimeline = canManage || !settings.hide_timeline;
   const showJudges = canManage || !settings.hide_judges;
+
+  const myTeamIds = useMemo(() => {
+    if (!user?.id) return new Set();
+    return new Set(teams.filter((t) => t.created_by === user.id).map((t) => t.id));
+  }, [teams, user?.id]);
 
   const canEditTeam = useCallback((team) => {
     if (canManage) return true;
@@ -447,7 +453,7 @@ export default function EventPage() {
     fetch(true);
   }, [fetch]);
 
-  useRealtimeLeaderboard(id, setTeams);
+  useRealtimeLeaderboard(id, setTeams, { currentUserId: user?.id });
 
   const onMatchComplete = useCallback((completedMatch) => {
     confetti({
@@ -458,8 +464,11 @@ export default function EventPage() {
     });
   }, []);
 
-  useRealtimeBracket(id, setMatches, onMatchComplete, () => fetch());
-  useRealtimePolls(id, setPolls, setPollOptions);
+  useRealtimeBracket(id, setMatches, onMatchComplete, () => fetch(), {
+    currentUserId: user?.id,
+    myTeamIds,
+  });
+  useRealtimePolls(id, setPolls, setPollOptions, { currentUserId: user?.id });
 
   const buildBracketMatches = (type) => {
     const shuffledTeams = shuffleTeams(teams);
@@ -467,6 +476,21 @@ export default function EventPage() {
     if (type === "round_robin") return generateRoundRobin(id, shuffledTeams);
     if (type === "swiss") return generateSwiss(id, shuffledTeams);
     return [];
+  };
+
+  const notifyBracketInclusion = (generatedMatches) => {
+    if (!user?.id || myTeamIds.size === 0) return;
+    const includesMyTeam = generatedMatches.some(
+      (m) => myTeamIds.has(m.team_a_id) || myTeamIds.has(m.team_b_id),
+    );
+    if (includesMyTeam) {
+      sendPushNotification({
+        title: "Bracket Generated",
+        body: "Your team is in the newly generated bracket.",
+        tag: `bracket-${id}`,
+        data: { eventId: id },
+      });
+    }
   };
 
   const handleGenerateBracket = async () => {
@@ -490,6 +514,7 @@ export default function EventPage() {
       });
       return;
     }
+    notifyBracketInclusion(generated);
     await supabase.from("event_audit").insert({
       event_id: id,
       action: "bracket.generate",
@@ -539,6 +564,7 @@ export default function EventPage() {
       });
       return;
     }
+    notifyBracketInclusion(generated);
     await supabase.from("event_audit").insert({
       event_id: id,
       action: "bracket.regenerate",

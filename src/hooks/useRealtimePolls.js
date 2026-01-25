@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { playNotificationSound, sendPushNotification } from '../lib/notifications';
 
-export function useRealtimePolls(eventId, setPolls, setPollOptions) {
+export function useRealtimePolls(eventId, setPolls, setPollOptions, options = {}) {
   useEffect(() => {
     if (!eventId) return;
 
@@ -18,6 +19,17 @@ export function useRealtimePolls(eventId, setPolls, setPollOptions) {
         async (payload) => {
           if (payload.eventType === 'INSERT') {
             setPolls((prev) => [payload.new, ...prev]);
+
+            playNotificationSound('poll.wav');
+
+            if (payload.new?.created_by !== options.currentUserId) {
+              sendPushNotification({
+                title: 'New Poll',
+                body: 'A new poll has been posted. Cast your vote now!',
+                tag: `poll-${payload.new.id}`,
+                data: { eventId, pollId: payload.new.id },
+              });
+            }
             
             // If checking specifically for a new poll, we should also fetch its options.
             // Give a small delay to ensure options are inserted.
@@ -59,5 +71,5 @@ export function useRealtimePolls(eventId, setPolls, setPollOptions) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, setPolls, setPollOptions]);
+  }, [eventId, setPolls, setPollOptions, options.currentUserId]);
 }
