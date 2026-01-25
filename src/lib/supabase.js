@@ -63,8 +63,6 @@ export async function withRetry(operation, maxRetries = 3) {
       
       // If no error, return immediately
       if (!result.error) {
-        // Reset consecutive failures on success
-        connectionHealth.consecutiveFailures = 0;
         return result;
       }
       
@@ -99,86 +97,7 @@ export async function withRetry(operation, maxRetries = 3) {
     }
   }
   
-  // Track consecutive failures
-  connectionHealth.consecutiveFailures++;
-  if (connectionHealth.consecutiveFailures >= 3) {
-    console.warn('[Supabase] Multiple consecutive failures detected, triggering reconnection');
-    reconnectRealtime();
-  }
-  
   return { data: null, error: lastError };
-}
-
-/**
- * Connection health tracking
- */
-const connectionHealth = {
-  consecutiveFailures: 0,
-  lastSuccessfulOperation: Date.now(),
-  isReconnecting: false,
-};
-
-/**
- * Force reconnect all realtime channels
- */
-export async function reconnectRealtime() {
-  if (connectionHealth.isReconnecting) {
-    console.debug('[Supabase] Reconnection already in progress');
-    return;
-  }
-  
-  connectionHealth.isReconnecting = true;
-  console.warn('[Supabase] Forcing realtime reconnection...');
-  
-  try {
-    // Disconnect and reconnect the realtime client
-    await supabase.realtime.disconnect();
-    await new Promise(resolve => setTimeout(resolve, 500));
-    await supabase.realtime.connect();
-    
-    connectionHealth.consecutiveFailures = 0;
-    connectionHealth.lastSuccessfulOperation = Date.now();
-    console.info('[Supabase] Realtime reconnection successful');
-    
-    // Notify listeners that reconnection happened
-    window.dispatchEvent(new CustomEvent('supabase-reconnected'));
-  } catch (err) {
-    console.error('[Supabase] Realtime reconnection failed:', err);
-  } finally {
-    connectionHealth.isReconnecting = false;
-  }
-}
-
-/**
- * Check if the Supabase connection is healthy by making a simple query
- * @returns {Promise<boolean>}
- */
-export async function checkConnectionHealth() {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const { error } = await supabase.from('profiles').select('id').limit(1).maybeSingle();
-    clearTimeout(timeoutId);
-    
-    if (!error) {
-      connectionHealth.consecutiveFailures = 0;
-      connectionHealth.lastSuccessfulOperation = Date.now();
-    }
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Get connection health status
- */
-export function getConnectionStatus() {
-  return {
-    ...connectionHealth,
-    timeSinceLastSuccess: Date.now() - connectionHealth.lastSuccessfulOperation,
-  };
 }
 
 // Debug helper - log active channels count (only in development)
@@ -203,6 +122,4 @@ if (import.meta.env.DEV) {
   
   // Expose for debugging in console
   window.__supabaseActiveChannels = () => Array.from(activeChannels);
-  window.__supabaseConnectionStatus = getConnectionStatus;
-  window.__supabaseReconnect = reconnectRealtime;
 }
