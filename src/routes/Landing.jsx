@@ -41,7 +41,7 @@ export default function Landing() {
                             </h1>
                             <p className="text-lg md:text-xl text-default-500 max-w-2xl mx-auto leading-relaxed">
                                 Brackets, leaderboards, judges, and live
-                                polls—everything you need to power creative
+                                polls - everything you need to power creative
                                 hackathons, sports tournaments, or battle
                                 events.
                             </p>
