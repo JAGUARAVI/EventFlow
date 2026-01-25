@@ -94,6 +94,9 @@ export default function ThemeBuilder({ isOpen, onOpenChange, eventId, currentThe
                 <CustomRadio description="Rich brown tones with a cozy feel" value="coffee">
                   Coffee
                 </CustomRadio>
+                <CustomRadio description="Vibrant greens and blues for a fresh look" value="fresh">
+                  Fresh
+                </CustomRadio>
               </RadioGroup>
               
               <div className="mt-4 p-4 rounded-lg border border-default-200">

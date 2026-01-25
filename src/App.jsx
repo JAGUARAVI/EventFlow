@@ -23,6 +23,8 @@ export default function App() {
             return isDark ? 'sunset-dark' : 'sunset-light'; // Ensure 'sunset-dark' corresponds to your hero.js definition
         } else if (themeName === 'coffee') {
             return isDark ? 'coffee-dark' : 'coffee-light'; // Ensure 'coffee-dark' corresponds to your hero.js definition
+        } else if (themeName === 'fresh') {
+            return isDark ? 'fresh-dark' : 'fresh-light'; // Ensure 'fresh-dark' corresponds to your hero.js definition
         }
         // 'modern' or fallback
         return isDark ? 'dark' : 'light';

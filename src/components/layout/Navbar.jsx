@@ -97,6 +97,7 @@ export default function Navbar() {
                             <DropdownItem key="modern">Modern</DropdownItem>
                             <DropdownItem key="sunset">Sunset</DropdownItem>
                             <DropdownItem key="coffee">Coffee</DropdownItem>
+                            <DropdownItem key="fresh">Fresh</DropdownItem>
                         </DropdownMenu>
                     </Dropdown>
                 </NavbarItem>
