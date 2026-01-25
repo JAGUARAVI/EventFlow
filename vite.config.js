@@ -17,6 +17,15 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/.*\.supabase\.co\/.*$/,
+            handler: 'NetworkOnly',
+          }
+        ]
+      },
       manifest: {
         name: 'EventFlow - Events Manager',
         short_name: 'EventFlow',
