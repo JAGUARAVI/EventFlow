@@ -80,7 +80,7 @@ export default function Login() {
         <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-sunset-blue/10 via-background to-sunset-purple/10">
             <Card className="w-full max-w-md shadow-2xl border-none bg-white/80 dark:bg-default-50/80 backdrop-blur-xl">
                 <CardHeader className="flex flex-col gap-2 items-center justify-center pt-8 pb-6">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-2">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-2 invert dark:invert-0">
                         E
                     </div>
                     <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-foreground to-default-500">
