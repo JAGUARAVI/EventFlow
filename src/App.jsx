@@ -16,9 +16,18 @@ import RequireRole from "./components/RequireRole";
 import { useTheme } from "./context/ThemeContext";
 
 export default function App() {
-    const { isDark } = useTheme();
+    const { isDark, themeName } = useTheme();
+    
+    const getThemeClass = () => {
+        if (themeName === 'sunset') {
+            return isDark ? 'sunset-dark' : 'sunset-light'; // Ensure 'sunset-dark' corresponds to your hero.js definition
+        }
+        // 'modern' or fallback
+        return isDark ? 'dark' : 'light';
+    };
+
     return (
-        <HeroUIProvider className={isDark ? "sunset" : "sunset-light"}>
+        <HeroUIProvider className={getThemeClass()}>
             <ToastProvider placement="top-right" />
             <BrowserRouter>
                 <Routes>
