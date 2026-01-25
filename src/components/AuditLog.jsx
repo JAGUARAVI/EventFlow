@@ -8,9 +8,11 @@ import {
   Chip,
   Input,
   Pagination,
+  Button,
+  Tooltip,
 } from "@heroui/react";
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, RotateCcw } from "lucide-react";
 
 function formatAction(item) {
   if (item.kind === "score") return "Score";
@@ -27,7 +29,7 @@ function formatMessage(item) {
   return item.message || "";
 }
 
-export default function AuditLog({ items = [], currentUserId }) {
+export default function AuditLog({ items = [], currentUserId, onUndo }) {
   const [filterValue, setFilterValue] = useState("");
   const [page, setPage] = useState(1);
   const rowsPerPage = 10;
@@ -100,6 +102,7 @@ export default function AuditLog({ items = [], currentUserId }) {
           <TableColumn>ACTION</TableColumn>
           <TableColumn>DETAILS</TableColumn>
           <TableColumn>BY</TableColumn>
+          {onUndo && <TableColumn align="end">ACTIONS</TableColumn>}
         </TableHeader>
         <TableBody emptyContent={"No logs found"}>
           {itemsToDisplay.map((r) => {
@@ -116,6 +119,22 @@ export default function AuditLog({ items = [], currentUserId }) {
                 <TableCell>
                   {by === currentUserId ? "You" : by || "System"}
                 </TableCell>
+                {onUndo && (
+                  <TableCell>
+                    {r.kind === "score" && !r.undo_id && (
+                      <Tooltip content="Undo this change">
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          onPress={() => onUndo(r)}
+                        >
+                          <RotateCcw size={16} />
+                        </Button>
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                )}
               </TableRow>
             );
           })}

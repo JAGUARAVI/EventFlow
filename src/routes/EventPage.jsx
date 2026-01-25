@@ -326,9 +326,16 @@ export default function EventPage() {
         setJudges(jRes.data || []);
         setRounds(rRes.data || []);
         setScoreHistory(aRes.data || []);
-        const scoreItems = (aRes.data || []).map((x) => ({
+        const rawScoreHistory = aRes.data || [];
+        const undoneIds = new Set();
+        rawScoreHistory.forEach((item) => {
+          if (item.undo_id) undoneIds.add(item.undo_id);
+        });
+
+        const scoreItems = rawScoreHistory.map((x) => ({
           ...x,
           kind: "score",
+          undo_id: x.undo_id || (undoneIds.has(x.id) ? "undone" : null),
         }));
         const auditItems = (auditRes.data || []).map((x) => ({
           ...x,
@@ -854,6 +861,58 @@ export default function EventPage() {
       return;
     }
     fetch();
+  };
+
+  const handleAuditUndo = async (item) => {
+    if (!item || item.kind !== "score" || !item.team_id) return;
+    if (!confirm(`Undo score change for ${item.teams?.name || "team"}?`))
+      return;
+
+    const t = teams.find((x) => x.id === item.team_id);
+    if (!t) return;
+
+    const currentScore = Number(t.score) || 0;
+    const deltaToUndo = Number(item.delta);
+    const inverseDelta = -deltaToUndo;
+    const nextScore = currentScore + inverseDelta;
+
+    const { error: e2 } = await supabase.from("score_history").insert([
+      {
+        event_id: id,
+        team_id: item.team_id,
+        points_before: currentScore,
+        points_after: nextScore,
+        delta: inverseDelta,
+        changed_by: user.id,
+        undo_id: item.id,
+      },
+    ]);
+
+    if (e2) {
+      addToast({
+        title: "Undo failed",
+        description: e2.message,
+        severity: "danger",
+      });
+      return;
+    }
+
+    const { error: e3 } = await supabase
+      .from("teams")
+      .update({ score: nextScore })
+      .eq("id", item.team_id);
+
+    if (e3) {
+      addToast({
+        title: "Undo failed",
+        description: e3.message,
+        severity: "danger",
+      });
+      return;
+    }
+
+    fetch();
+    addToast({ title: "Change undone", severity: "success" });
   };
 
   const handleScoreChange = async (teamId, deltaVal) => {
@@ -2051,6 +2110,7 @@ export default function EventPage() {
                       currentUserId={
                         profile?.display_name || user?.email || user?.id
                       }
+                      onUndo={handleAuditUndo}
                     />
                   </div>
                 </Tab>
