@@ -57,12 +57,27 @@ export default function EventAnalytics({
       setLoading(true);
 
       // Compute engagement metrics
+      let totalVotesCount = votes?.length || 0;
+
+      // If votes prop is empty but we have polls, try to fetch count from DB
+      if (totalVotesCount === 0 && polls?.length > 0) {
+        const pollIds = polls.map((p) => p.id);
+        const { count } = await supabase
+          .from("votes") 
+          .select("*", { count: "exact", head: true })
+          .in("poll_id", pollIds);
+        
+        if (count !== null) {
+          totalVotesCount = count;
+        }
+      }
+
       const data = {
         totalMatches: matches?.length || 0,
         completedMatches:
           matches?.filter((m) => m.status === "completed").length || 0,
         totalPolls: polls?.length || 0,
-        totalVotes: votes?.length || 0,
+        totalVotes: totalVotesCount,
         pollEngagementRate: 0,
         scoreActivityRate: 0,
         avgScoreChangePerRound: 0,
@@ -175,16 +190,21 @@ export default function EventAnalytics({
       // Score activity: how many teams have had score changes
       if (scoreHistory && scoreHistory.length > 0) {
         const uniqueTeams = new Set(scoreHistory.map((s) => s.team_id));
-        data.scoreActivityRate = Math.round((uniqueTeams.size / 10) * 100);
+        data.scoreActivityRate = Math.round((uniqueTeams.size / (teams?.length || 1)) * 100);
 
         // Find team with most score updates
         const teamCounts = {};
         scoreHistory.forEach((s) => {
           teamCounts[s.team_id] = (teamCounts[s.team_id] || 0) + 1;
         });
-        data.mostActiveTeamId = Object.entries(teamCounts).sort(
+        
+        const mostActiveId = Object.entries(teamCounts).sort(
           (a, b) => b[1] - a[1],
         )[0]?.[0];
+        
+        if (mostActiveId) {
+            data.mostActiveTeamId = mostActiveId;
+        }
 
         // Average score changes
         const totalChanges = scoreHistory.reduce(
@@ -192,9 +212,13 @@ export default function EventAnalytics({
           0,
         );
         data.avgScoreChangePerRound = (
-          totalChanges / scoreHistory.length
+            scoreHistory.length > 0 ? (totalChanges / scoreHistory.length) : 0
         ).toFixed(1);
       }
+      
+      data.matchCompletionRate = data.totalMatches > 0 
+        ? Math.round((data.completedMatches / data.totalMatches) * 100) 
+        : 0;
 
       setMetrics(data);
     } catch (err) {
@@ -534,21 +558,54 @@ export default function EventAnalytics({
 
         {/* Insights */}
         <div className="bg-info-50 border border-info rounded p-3">
-          <p className="text-sm font-semibold text-info mb-1">Insights</p>
+          <p className="text-sm font-semibold text-info mb-1">Advanced Insights</p>
           <ul className="text-sm text-info space-y-1">
             {metrics.completedMatches === 0 && metrics.totalMatches > 0 && (
-              <li>• No matches completed yet. Keep the event going!</li>
+              <li>• <span className="font-semibold">Early Stage:</span> No matches completed yet. Get the competition started!</li>
             )}
+            
+            {metrics.matchCompletionRate > 80 && metrics.matchCompletionRate < 100 && (
+               <li>• <span className="font-semibold">Final Stretch:</span> The event is reaching its conclusion ({metrics.matchCompletionRate}% complete).</li>
+            )}
+
             {metrics.pollEngagementRate > 70 && (
-              <li>• Great poll participation! Teams are highly engaged.</li>
+              <li>• <span className="font-semibold">High Community Engagement:</span> Poll participation is excellent ({metrics.pollEngagementRate}%). Teams are rallying their supporters.</li>
             )}
+
+            {metrics.pollEngagementRate < 20 && metrics.totalPolls > 0 && metrics.totalVotes > 0 && (
+               <li>• <span className="font-semibold">Voter Apathy:</span> Poll engagement is low ({metrics.pollEngagementRate}%). Try announcing polls live to boost activity.</li>
+            )}
+
+            {metrics.skewness > 1 && (
+               <li>• <span className="font-semibold">Dominant Performers:</span> The score distribution is right-skewed, suggesting a few teams are pulling far ahead of the pack.</li>
+            )}
+            
+            {Math.abs(metrics.skewness) < 0.5 && metrics.totalTeams > 4 && (
+               <li>• <span className="font-semibold">Balanced Field:</span> Scores are evenly distributed, indicating a highly competitive and matched set of teams.</li>
+            )}
+
+            {metrics.gini > 0.4 && (
+               <li>• <span className="font-semibold">Inequality Alert:</span> High Gini coefficient ({metrics.gini}) indicates vast disparities in team performance.</li>
+            )}
+
+            {metrics.stdDev > (parseFloat(metrics.averageScore) * 0.5) && parseFloat(metrics.averageScore) > 0 && (
+               <li>• <span className="font-semibold">High Volatility:</span> Standard deviation is over 50% of the mean, meaning outcomes are unpredictable and diverse.</li>
+            )}
+
             {metrics.scoreActivityRate > 70 && (
-              <li>
-                • High competitive intensity. Scores are changing rapidly.
-              </li>
+              <li>• <span className="font-semibold">Dynamic Leaderboard:</span> Over 70% of teams have had score updates, showing widespread competitive action.</li>
             )}
+
+            {metrics.mostActiveTeamId && (
+               <li>• <span className="font-semibold">Most Active Team:</span> Team {teams.find(t => t.id === metrics.mostActiveTeamId)?.name || 'Unknown'} has the most frequent score changes.</li>
+            )}
+
             {metrics.totalVotes === 0 && metrics.totalPolls > 0 && (
-              <li>• No poll votes yet. Encourage teams to participate.</li>
+              <li>• <span className="font-semibold">No Votes Yet:</span> Polls are open but empty. Encourage content engagement.</li>
+            )}
+            
+            {metrics.completedMatches > 3 && parseFloat(metrics.avgScoreChangePerRound) < 2 && (
+                <li>• <span className="font-semibold">Defensive Play:</span> Average score changes are small ({metrics.avgScoreChangePerRound} pts), suggesting tight or low-scoring matches.</li>
             )}
           </ul>
         </div>

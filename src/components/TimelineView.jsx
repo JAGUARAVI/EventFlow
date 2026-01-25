@@ -227,7 +227,7 @@ export default function TimelineView({
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {timelineData.map((event, idx) => (
+                  {[...timelineData].reverse().map((event, idx) => (
                     <div key={idx} className="flex gap-3">
                       <div className="flex flex-col items-center">
                         <div
@@ -235,7 +235,7 @@ export default function TimelineView({
                             event.type === "round"
                               ? "bg-primary"
                               : event.type === "match"
-                                ? "bg-success"
+                                ? "bg-danger"
                                 : "bg-secondary"
                           }`}
                         />

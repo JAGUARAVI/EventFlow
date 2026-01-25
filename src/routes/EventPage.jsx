@@ -98,6 +98,7 @@ import {
 import { useLiveVotes } from "../hooks/useLiveVotes";
 import { useRealtimePolls } from "../hooks/useRealtimePolls";
 import { useTheme } from "../context/ThemeContext";
+import confetti from "canvas-confetti";
 
 
 export default function EventPage() {
@@ -439,7 +440,17 @@ export default function EventPage() {
   }, [fetch]);
 
   useRealtimeLeaderboard(id, setTeams);
-  useRealtimeBracket(id, setMatches);
+  
+  const onMatchComplete = useCallback((completedMatch) => {
+    confetti({
+      particleCount: 150,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ["#0070f3", "#7c3aed", "#ec4899", "#ffffff"],
+    });
+  }, []);
+
+  useRealtimeBracket(id, setMatches, onMatchComplete);
   useRealtimePolls(id, setPolls, setPollOptions);
 
   const buildBracketMatches = (type) => {

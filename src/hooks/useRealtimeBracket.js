@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
  * @param {string} eventId
  * @param {function} setMatches - (updater: (prev) => next) => void
  */
-export function useRealtimeBracket(eventId, setMatches) {
+export function useRealtimeBracket(eventId, setMatches, onMatchCompletion) {
   useEffect(() => {
     if (!eventId) return;
 
@@ -22,7 +22,20 @@ export function useRealtimeBracket(eventId, setMatches) {
               return [...prev, payload.new];
             });
           } else if (payload.eventType === 'UPDATE') {
-            setMatches((prev) => prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)));
+            setMatches((prev) => {
+              // Check for completion event
+              const oldMatch = prev.find(m => m.id === payload.new.id);
+              if (
+                oldMatch && 
+                oldMatch.status !== 'completed' && 
+                payload.new.status === 'completed' && 
+                payload.new.winner_id
+              ) {
+                onMatchCompletion?.(payload.new);
+              }
+              
+              return prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m));
+            });
           } else if (payload.eventType === 'DELETE') {
             setMatches((prev) => prev.filter((m) => m.id !== payload.old.id));
           }
@@ -33,5 +46,5 @@ export function useRealtimeBracket(eventId, setMatches) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, setMatches]);
+  }, [eventId, setMatches, onMatchCompletion]);
 }

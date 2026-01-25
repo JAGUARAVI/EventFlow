@@ -79,13 +79,22 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
     >
       <div className="flex flex-col divide-y divide-default-100">
         {/* Team A */}
-        <div className={`
+        <motion.div 
+          className={`
           flex justify-between items-center p-3 transition-colors
           ${teamAWon ? 'bg-success/10' : ''}
           ${isCompleted && !teamAWon ? 'opacity-50' : ''}
         `}>
           <div className="flex items-center gap-2 overflow-hidden">
-            {teamAWon && <Trophy size={14} className="text-warning shrink-0" />}
+            {teamAWon && (
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 260, damping: 20 }}
+              >
+                <Trophy size={14} className="text-warning shrink-0" />
+              </motion.div>
+            )}
             <span className={`text-sm truncate ${teamAWon ? 'font-bold text-foreground' : 'font-medium text-default-700'}`}>
               {teamA?.name || <span className="text-default-300 italic">TBD</span>}
             </span>
@@ -93,16 +102,25 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
           <span className={`text-sm font-mono font-bold ${teamAWon ? 'text-success' : 'text-default-400'}`}>
             {match.team_a_score ?? '-'}
           </span>
-        </div>
+        </motion.div>
 
         {/* Team B */}
-        <div className={`
+        <motion.div 
+          className={`
           flex justify-between items-center p-3 transition-colors
           ${teamBWon ? 'bg-success/10' : ''}
           ${isCompleted && !teamBWon ? 'opacity-50' : ''}
         `}>
           <div className="flex items-center gap-2 overflow-hidden">
-            {teamBWon && <Trophy size={14} className="text-warning shrink-0" />}
+            {teamBWon && (
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 260, damping: 20 }}
+              >
+                <Trophy size={14} className="text-warning shrink-0" />
+              </motion.div>
+            )}
             <span className={`text-sm truncate ${teamBWon ? 'font-bold text-foreground' : 'font-medium text-default-700'}`}>
               {teamB?.name || <span className="text-default-300 italic">TBD</span>}
             </span>
@@ -110,7 +128,7 @@ function SingleElimMatchCard({ match, teams, canEdit, onEdit }) {
           <span className={`text-sm font-mono font-bold ${teamBWon ? 'text-success' : 'text-default-400'}`}>
             {match.team_b_score ?? '-'}
           </span>
-        </div>
+        </motion.div>
       </div>
 
       {/* Status Bar */}
