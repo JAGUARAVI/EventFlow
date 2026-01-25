@@ -96,12 +96,12 @@ import {
 } from "../lib/bracket";
 import { useLiveVotes } from "../hooks/useLiveVotes";
 import { useRealtimePolls } from "../hooks/useRealtimePolls";
-import { HeroUIProvider } from "@heroui/react";
 import { useTheme } from "../context/ThemeContext";
+
 
 export default function EventPage() {
   const { id } = useParams();
-  const { isDark } = useTheme();
+  const { isDark, setThemePreset } = useTheme();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, profile } = useAuth();
@@ -118,6 +118,31 @@ export default function EventPage() {
   const [generatingBracket, setGeneratingBracket] = useState(false);
   const [regeneratingBracket, setRegeneratingBracket] = useState(false);
   const [fixingBracket, setFixingBracket] = useState(false);
+
+  useEffect(() => {
+    const eventTheme = event?.settings?.theme;
+    if (eventTheme) {
+      const BACKUP_KEY = "eventflow-last-user-theme";
+      const currentStored =
+        localStorage.getItem("eventflow-theme-preset") || "modern";
+
+      if (!localStorage.getItem(BACKUP_KEY)) {
+        if (currentStored !== eventTheme) {
+          localStorage.setItem(BACKUP_KEY, currentStored);
+        }
+      }
+
+      setThemePreset(eventTheme);
+
+      return () => {
+        const backup = localStorage.getItem(BACKUP_KEY);
+        if (backup) {
+          setThemePreset(backup);
+          localStorage.removeItem(BACKUP_KEY);
+        }
+      };
+    }
+  }, [event?.settings?.theme, setThemePreset]);
 
   const {
     isOpen: isMatchOpen,
@@ -1170,13 +1195,7 @@ export default function EventPage() {
     );
   }
 
-  const eventTheme = event?.settings?.theme || 'modern';
-  const eventThemeClass = eventTheme === 'sunset' 
-      ? (isDark ? 'sunset-dark' : 'sunset-light') 
-      : (isDark ? 'dark' : 'light');
-
   return (
-    <HeroUIProvider className={eventThemeClass}>
       <div className="min-h-screen bg-linear-to-br from-background via-default-50/50 to-background">
         {/* Hero Header */}
 
@@ -2382,7 +2401,6 @@ export default function EventPage() {
       />
 
       </div>
-    </HeroUIProvider>
   );
 }
 
