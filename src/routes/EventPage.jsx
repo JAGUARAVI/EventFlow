@@ -241,6 +241,14 @@ export default function EventPage() {
   const showTimeline = canManage || !settings.hide_timeline;
   const showJudges = canManage || !settings.hide_judges;
 
+  const canEditTeam = useCallback((team) => {
+    if (canManage) return true;
+    if (!user || !event) return false;
+    const isMyTeam = team.created_by === user.id;
+    const isLive = ["live", "completed", "archived"].includes(event.status);
+    return isMyTeam && !isLive;
+  }, [canManage, user, event]);
+
   const toggleTeamExpansion = (teamId) => {
     setExpandedTeams((prev) => {
       const next = new Set(prev);
@@ -803,13 +811,12 @@ export default function EventPage() {
 
   const saveTeam = async () => {
     const name = teamName.trim();
-    const created_by = user?.id || null;
     if (!name) return;
     setTeamSaving(true);
     if (editingTeam) {
       const { error: e } = await supabase
         .from("teams")
-        .update({ name, metadata_values: teamMetadata, created_by })
+        .update({ name, metadata_values: teamMetadata })
         .eq("id", editingTeam.id);
       setTeamSaving(false);
       if (e) {
@@ -1641,52 +1648,43 @@ export default function EventPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredTeams.length === 0 ? (
-                      <div className="col-span-full py-12 text-center text-default-400 border border-dashed border-default-200 rounded-xl">
-                        <Users
-                          size={48}
-                          className="mx-auto mb-4 opacity-50"
-                        />
-                        <p>No teams found</p>
-                      </div>
-                    ) : (
-                      filteredTeams.map((t) => {
-                        const isExpanded =
-                          expandedTeams.has(t.id);
+                  {filteredTeams.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-default-200 rounded-xl">
+                      <Users size={48} className="mb-4 text-default-300" />
+                      <p className="text-default-500">No teams found</p>
+                    </div>
+                  ) : (
+                    (() => {
+                      const renderTeam = (t) => {
+                        const isExpanded = expandedTeams.has(t.id);
+                        const allowEdit = canEditTeam(t);
                         return (
                           <Card
                             key={t.id}
-                            className="group border border-transparent hover:border-primary/20 transition-all"
+                            className={`group border border-transparent hover:border-primary/20 transition-all ${t.created_by === user?.id ? "border-primary/50 bg-primary/5" : ""}`}
                           >
                             <CardBody className="gap-3">
                               <div className="flex items-start justify-between">
                                 <div
                                   className="flex-1 cursor-pointer"
-                                  onClick={() =>toggleTeamExpansion(t.id)}
+                                  onClick={() => toggleTeamExpansion(t.id)}
                                 >
                                   <div className="flex items-center justify-between mb-1">
                                     <h4 className="font-bold text-lg line-clamp-1">
-                                      {
-                                        t.name
-                                      }
+                                      {t.name}
                                     </h4>
                                     <ChevronDown
-                                      size={
-                                        16
-                                      }
+                                      size={16}
                                       className={`text-default-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                                     />
                                   </div>
                                   {t.description && (
                                     <p className="text-sm text-default-500 line-clamp-2">
-                                      {
-                                        t.description
-                                      }
+                                      {t.description}
                                     </p>
                                   )}
                                 </div>
-                                {canManage && (
+                                {(canManage || allowEdit) && (
                                   <Dropdown>
                                     <DropdownTrigger>
                                       <Button
@@ -1695,49 +1693,23 @@ export default function EventPage() {
                                         variant="light"
                                         className="opacity-0 group-hover:opacity-100"
                                       >
-                                        <MoreVertical
-                                          size={
-                                            16
-                                          }
-                                        />
+                                        <MoreVertical size={16} />
                                       </Button>
                                     </DropdownTrigger>
                                     <DropdownMenu>
                                       <DropdownItem
-                                        startContent={
-                                          <Edit3
-                                            size={
-                                              14
-                                            }
-                                          />
-                                        }
-                                        onPress={() =>
-                                          openEditTeam(
-                                            t,
-                                          )
-                                        }
+                                        startContent={<Edit3 size={14} />}
+                                        onPress={() => openEditTeam(t)}
                                       >
-                                        Edit
-                                        Details
+                                        Edit Details
                                       </DropdownItem>
                                       <DropdownItem
-                                        startContent={
-                                          <Trash2
-                                            size={
-                                              14
-                                            }
-                                          />
-                                        }
+                                        startContent={<Trash2 size={14} />}
                                         className="text-danger"
                                         color="danger"
-                                        onPress={() =>
-                                          removeTeam(
-                                            t.id,
-                                          )
-                                        }
+                                        onPress={() => removeTeam(t.id)}
                                       >
-                                        Remove
-                                        Team
+                                        Remove Team
                                       </DropdownItem>
                                     </DropdownMenu>
                                   </Dropdown>
@@ -1746,22 +1718,57 @@ export default function EventPage() {
                               {isExpanded && (
                                 <div className="pt-3 border-t border-divider">
                                   <TeamMetadataDisplay
-                                    eventId={
-                                      id
-                                    }
-                                    teamMetadata={
-                                      t.metadata_values ||
-                                      {}
-                                    }
+                                    eventId={id}
+                                    teamMetadata={t.metadata_values || {}}
                                   />
                                 </div>
                               )}
                             </CardBody>
                           </Card>
                         );
-                      })
-                    )}
-                  </div>
+                      };
+
+                      const myTeams = filteredTeams.filter(
+                        (t) => t.created_by === user?.id
+                      );
+                      const otherTeams = filteredTeams.filter(
+                        (t) => t.created_by !== user?.id
+                      );
+
+                      return (
+                        <div className="space-y-8">
+                          {myTeams.length > 0 && (
+                            <div className="space-y-4">
+                              <h3 className="text-xl font-bold flex items-center gap-2 text-primary">
+                                Your Team
+                              </h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {myTeams.map(renderTeam)}
+                              </div>
+                              <Divider className="my-6" />
+                            </div>
+                          )}
+                          <div className="space-y-4">
+                            {myTeams.length > 0 && (
+                              <h3 className="text-xl font-bold flex items-center gap-2">
+                                All Teams
+                              </h3>
+                            )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {otherTeams.length === 0 &&
+                              myTeams.length > 0 ? (
+                                <p className="text-default-500 italic">
+                                  No other teams found.
+                                </p>
+                              ) : (
+                                otherTeams.map(renderTeam)
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
                 </div>
               </Tab>
               {hasType("bracket") && (
