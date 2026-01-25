@@ -185,13 +185,10 @@ export default function MetadataTemplateBuilder({
                 </div>
             ) : (
                 <Button
+                    variant="flat"
                     startContent={<Settings size={16} />}
-                    onPress={() => setIsOpen(true)}
-                    variant="bordered"
-                    size="sm"
-                >
-                    {template || initialTemplate ? "Edit" : "Create"} Team
-                    Fields
+                    onPress={() => setIsOpen(true)}>
+                              Fields
                 </Button>
             )}
 

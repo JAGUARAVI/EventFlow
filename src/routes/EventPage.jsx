@@ -1616,14 +1616,6 @@ export default function EventPage() {
                         <MetadataTemplateBuilder
                           eventId={id}
                           onUpdate={() => fetch()}
-                          trigger={
-                            <Button
-                              variant="flat"
-                              startContent={<Settings size={16} />}
-                            >
-                              Fields
-                            </Button>
-                          }
                         />
                       )}
                       {canManage && (
