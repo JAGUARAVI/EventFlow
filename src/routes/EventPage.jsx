@@ -69,7 +69,7 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 import { useRealtimeLeaderboard } from "../hooks/useRealtimeLeaderboard";
 import { useRealtimeBracket } from "../hooks/useRealtimeBracket";
-import { useEventTheme } from "../hooks/useEventTheme";
+
 import Leaderboard from "../components/Leaderboard";
 import AuditLog from "../components/AuditLog";
 import BracketView from "../components/BracketView";
@@ -96,9 +96,12 @@ import {
 } from "../lib/bracket";
 import { useLiveVotes } from "../hooks/useLiveVotes";
 import { useRealtimePolls } from "../hooks/useRealtimePolls";
+import { HeroUIProvider } from "@heroui/react";
+import { useTheme } from "../context/ThemeContext";
 
 export default function EventPage() {
   const { id } = useParams();
+  const { isDark } = useTheme();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, profile } = useAuth();
@@ -210,12 +213,6 @@ export default function EventPage() {
   const showAnalytics = canManage || !settings.hide_analytics;
   const showTimeline = canManage || !settings.hide_timeline;
   const showJudges = canManage || !settings.hide_judges;
-
-  // Load and apply event-specific theme
-  const { eventTheme, updateEventTheme, hasEventTheme } = useEventTheme(
-    id,
-    canManage,
-  );
 
   const toggleTeamExpansion = (teamId) => {
     setExpandedTeams((prev) => {
@@ -1173,9 +1170,16 @@ export default function EventPage() {
     );
   }
 
+  const eventTheme = event?.settings?.theme || 'modern';
+  const eventThemeClass = eventTheme === 'sunset' 
+      ? (isDark ? 'sunset-dark' : 'sunset-light') 
+      : (isDark ? 'dark' : 'light');
+
   return (
-    <div className="min-h-screen bg-linear-to-br from-background via-default-50/50 to-background">
-      {/* Hero Header */}
+    <HeroUIProvider className={eventThemeClass}>
+      <div className="min-h-screen bg-linear-to-br from-background via-default-50/50 to-background">
+        {/* Hero Header */}
+
       <div className="relative w-full h-75 -mb-15">
         {event?.banner_url ? (
           <>
@@ -1252,13 +1256,6 @@ export default function EventPage() {
                   >
                     Edit Event
                   </Button>
-                  <Button
-                    variant="flat"
-                    startContent={<Palette size={16} />}
-                    onPress={onThemeOpen}
-                  >
-                    Theme
-                  </Button>
 
                   <EventStatusManager
                     event={event}
@@ -1277,6 +1274,13 @@ export default function EventPage() {
                       </Button>
                     </DropdownTrigger>
                     <DropdownMenu aria-label="Event actions">
+                     <DropdownItem
+                        key="theme"
+                        startContent={<Palette size={16} />}
+                        onPress={onThemeOpen}
+                      >
+                        Change Theme
+                      </DropdownItem>
                       <DropdownItem
                         key="clone"
                         startContent={<Copy size={16} />}
@@ -2362,37 +2366,23 @@ export default function EventPage() {
         </ModalContent>
       </Modal>
 
-      {/* Event Theme Customization Modal */}
-      <Modal isOpen={isThemeOpen} onClose={onThemeClose} size="lg">
-        <ModalContent>
-          <ModalHeader>
-            Customize Event Theme
-            {hasEventTheme && (
-              <span className="text-sm text-default-500 ml-2 font-normal">
-                (Visible to all viewers)
-              </span>
-            )}
-          </ModalHeader>
-          <ModalBody>
-            <p className="text-sm text-default-500 mb-4">
-              Set custom brand colors for this event page.
-            </p>
-            <ThemeBuilder
-              initialColors={eventTheme?.colors_json}
-              onOpenChange={() => {}}
-              onSave={(colors) => {
-                updateEventTheme(colors);
-                addToast({
-                  title: "Event theme saved",
-                  severity: "success",
-                });
-                onThemeClose();
-              }}
-            />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
-    </div>
+      {/* Theme Builder Modal */}
+      <ThemeBuilder
+        isOpen={isThemeOpen}
+        onOpenChange={onThemeClose}
+        eventId={id}
+        currentTheme={event?.settings?.theme}
+        onSave={(newTheme) => {
+            setEvent(prev => ({
+                ...prev,
+                settings: { ...prev.settings, theme: newTheme }
+            }));
+            fetch();
+        }}
+      />
+
+      </div>
+    </HeroUIProvider>
   );
 }
 
