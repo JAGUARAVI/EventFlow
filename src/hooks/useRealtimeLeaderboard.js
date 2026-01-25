@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { playNotificationSound, sendPushNotification } from '../lib/notifications';
 
@@ -12,98 +12,161 @@ export function useRealtimeLeaderboard(eventId, setTeams, options = {}) {
   // Track the last seen score for each team to avoid accepting stale updates
   const lastSeenScoresRef = useRef(new Map());
   const channelRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const reconnectTimeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const isIntentionalCloseRef = useRef(false);
+  const maxReconnectAttempts = 5;
 
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
 
+  const cleanupChannel = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    
+    isIntentionalCloseRef.current = true;
+    
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+  }, []);
+
+  const setupChannel = useCallback(() => {
+    if (!eventId || !isMountedRef.current) return null;
+    
+    if (channelRef.current) {
+      isIntentionalCloseRef.current = true;
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
+    isIntentionalCloseRef.current = false;
+    
+    console.debug(`[useRealtimeLeaderboard] Setting up channel for event: ${eventId}`);
+
+    const channel = supabase
+      .channel(`leaderboard:${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'teams', filter: `event_id=eq.${eventId}` },
+        (payload) => {
+          if (!isMountedRef.current) return;
+          
+          // Reset reconnect attempts on successful message
+          reconnectAttempts.current = 0;
+          
+          if (payload.eventType === 'INSERT') {
+            setTeams((prev) => {
+              if (prev.some((t) => t.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const teamId = payload.new.id;
+            const incomingScore = payload.new.score;
+            
+            setTeams((prev) => {
+              const existingTeam = prev.find(t => t.id === teamId);
+              if (!existingTeam) return prev;
+              
+              const currentScore = existingTeam.score;
+              const scoreChanged = incomingScore !== currentScore;
+              
+              if (scoreChanged) {
+                // Track this score
+                lastSeenScoresRef.current.set(teamId, incomingScore);
+              }
+              
+              // Always merge the update - the DB is the source of truth
+              return prev.map((t) => (t.id === teamId ? { ...t, ...payload.new } : t));
+            });
+          } else if (payload.eventType === 'DELETE') {
+            lastSeenScoresRef.current.delete(payload.old.id);
+            setTeams((prev) => prev.filter((t) => t.id !== payload.old.id));
+          }
+
+          if (payload.eventType === 'UPDATE') {
+            const currentUserId = optionsRef.current.currentUserId;
+            const teamOwner = payload.new?.created_by || payload.old?.created_by;
+            if (currentUserId && teamOwner === currentUserId) {
+              sendPushNotification({
+                title: 'Leaderboard Update',
+                body: 'Your team just moved on the leaderboard to position ' + (payload.new?.rank || 'unknown') + ' at ' + new Date().toLocaleTimeString() + '.',
+                tag: `leaderboard-${eventId}`,
+                data: { eventId, teamId: payload.new?.id || payload.old?.id },
+              });
+            }
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        console.debug(`[useRealtimeLeaderboard] Channel status: ${status}`, err || '');
+        
+        if (!isMountedRef.current) return;
+        
+        if (status === 'SUBSCRIBED') {
+          reconnectAttempts.current = 0;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (isIntentionalCloseRef.current) {
+            console.debug('[useRealtimeLeaderboard] Ignoring close event (intentional)');
+            return;
+          }
+          
+          console.error('[useRealtimeLeaderboard] Channel error:', status, err);
+          
+          if (reconnectAttempts.current < maxReconnectAttempts) {
+            reconnectAttempts.current++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current - 1), 10000);
+            console.warn(`[useRealtimeLeaderboard] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`);
+            
+            if (reconnectTimeoutRef.current) {
+              clearTimeout(reconnectTimeoutRef.current);
+            }
+            
+            reconnectTimeoutRef.current = setTimeout(() => {
+              reconnectTimeoutRef.current = null;
+              if (isMountedRef.current && !isIntentionalCloseRef.current) {
+                channelRef.current = setupChannel();
+              }
+            }, delay);
+          } else {
+            console.error('[useRealtimeLeaderboard] Max reconnection attempts reached');
+          }
+        }
+      });
+
+    return channel;
+  }, [eventId, setTeams]);
+
   useEffect(() => {
+    isMountedRef.current = true;
+    
     if (!eventId) return;
     
     // Reset scores tracking when eventId changes
     lastSeenScoresRef.current = new Map();
-
-    const setupChannel = () => {
-      const channel = supabase
-        .channel(`leaderboard:${eventId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'teams', filter: `event_id=eq.${eventId}` },
-          (payload) => {
-            if (payload.eventType === 'INSERT') {
-              setTeams((prev) => {
-                if (prev.some((t) => t.id === payload.new.id)) return prev;
-                return [...prev, payload.new];
-              });
-            } else if (payload.eventType === 'UPDATE') {
-              const teamId = payload.new.id;
-              const incomingScore = payload.new.score;
-              
-              setTeams((prev) => {
-                const existingTeam = prev.find(t => t.id === teamId);
-                if (!existingTeam) return prev;
-                
-                const currentScore = existingTeam.score;
-                const lastSeenScore = lastSeenScoresRef.current.get(teamId);
-                
-                // If the incoming score is less than what we've already seen locally,
-                // it's likely a stale update - only accept if it's newer
-                // However, we can't easily determine "newer" without timestamps,
-                // so we'll accept updates that are >= our last seen value OR
-                // if this is a non-score field update
-                const scoreChanged = incomingScore !== currentScore;
-                
-                if (scoreChanged) {
-                  // Track this score
-                  lastSeenScoresRef.current.set(teamId, incomingScore);
-                }
-                
-                // Always merge the update - the DB is the source of truth
-                return prev.map((t) => (t.id === teamId ? { ...t, ...payload.new } : t));
-              });
-            } else if (payload.eventType === 'DELETE') {
-              lastSeenScoresRef.current.delete(payload.old.id);
-              setTeams((prev) => prev.filter((t) => t.id !== payload.old.id));
-            }
-
-            if (payload.eventType === 'UPDATE') {
-              const currentUserId = optionsRef.current.currentUserId;
-              const teamOwner = payload.new?.created_by || payload.old?.created_by;
-              if (currentUserId && teamOwner === currentUserId) {
-                //playNotificationSound('leaderboard.wav'); /// cab be annoying if too frequent
-                sendPushNotification({
-                  title: 'Leaderboard Update',
-                  body: 'Your team just moved on the leaderboard to position ' + (payload.new?.rank || 'unknown') + ' at ' + new Date().toLocaleTimeString() + '.',
-                  tag: `leaderboard-${eventId}`,
-                  data: { eventId, teamId: payload.new?.id || payload.old?.id },
-                });
-              }
-            }
-          }
-        )
-        .subscribe((status, err) => {
-          if (status === 'CHANNEL_ERROR') {
-            console.error('Leaderboard channel error:', err);
-            // Attempt to reconnect after a delay
-            setTimeout(() => {
-              if (channelRef.current) {
-                supabase.removeChannel(channelRef.current);
-              }
-              channelRef.current = setupChannel();
-            }, 2000);
-          }
-        });
-
-      return channel;
-    };
+    reconnectAttempts.current = 0;
 
     channelRef.current = setupChannel();
+    
+    // Listen for global reconnection events
+    const handleReconnect = () => {
+      if (!isMountedRef.current) return;
+      console.debug('[useRealtimeLeaderboard] Global reconnection detected, re-subscribing');
+      reconnectAttempts.current = 0;
+      channelRef.current = setupChannel();
+    };
+    
+    window.addEventListener('supabase-reconnected', handleReconnect);
 
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      isMountedRef.current = false;
+      window.removeEventListener('supabase-reconnected', handleReconnect);
+      cleanupChannel();
     };
-  }, [eventId, setTeams]);
+  }, [eventId, setupChannel, cleanupChannel]);
 }

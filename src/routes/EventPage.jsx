@@ -65,7 +65,7 @@ import {
   Info,
   Activity,
 } from "lucide-react";
-import { supabase, withRetry } from "../lib/supabase";
+import { supabase, withRetry, checkConnectionHealth, reconnectRealtime } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 import { useRealtimeLeaderboard } from "../hooks/useRealtimeLeaderboard";
 import { useRealtimeBracket } from "../hooks/useRealtimeBracket";
@@ -462,6 +462,52 @@ export default function EventPage() {
   useEffect(() => {
     fetch(true);
   }, [fetch]);
+
+  // Periodic connection health check - auto-reconnect if connection seems stale
+  useEffect(() => {
+    if (!id) return;
+    
+    let healthCheckInterval;
+    let consecutiveFailures = 0;
+    
+    const checkHealth = async () => {
+      const isHealthy = await checkConnectionHealth();
+      
+      if (!isHealthy) {
+        consecutiveFailures++;
+        console.warn(`[EventPage] Connection health check failed (${consecutiveFailures}/3)`);
+        
+        if (consecutiveFailures >= 3) {
+          console.warn('[EventPage] Connection appears unhealthy, triggering reconnection');
+          consecutiveFailures = 0;
+          await reconnectRealtime();
+          // Refresh data after reconnection
+          fetch();
+        }
+      } else {
+        if (consecutiveFailures > 0) {
+          console.debug('[EventPage] Connection health restored');
+        }
+        consecutiveFailures = 0;
+      }
+    };
+    
+    // Check health every 30 seconds
+    healthCheckInterval = setInterval(checkHealth, 10000);
+    
+    // Also listen for reconnection events to refresh data
+    const handleReconnect = () => {
+      console.debug('[EventPage] Reconnection detected, refreshing data');
+      fetch();
+    };
+    
+    window.addEventListener('supabase-reconnected', handleReconnect);
+    
+    return () => {
+      clearInterval(healthCheckInterval);
+      window.removeEventListener('supabase-reconnected', handleReconnect);
+    };
+  }, [id, fetch]);
 
   useRealtimeLeaderboard(id, setTeams, { currentUserId: user?.id });
 
