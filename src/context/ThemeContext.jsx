@@ -51,9 +51,9 @@ export function ThemeProvider({ children }) {
   // Theme name: 'modern' (default), 'sunset', etc.
   const [themeName, setThemeName] = useState(() => {
      try {
-         return localStorage.getItem(PREDEFINED_AND_CUSTOM_KEY) || 'modern';
+         return localStorage.getItem(PREDEFINED_AND_CUSTOM_KEY) || 'sunset';
      } catch {
-         return 'modern';
+         return 'sunset';
      }
   });
 

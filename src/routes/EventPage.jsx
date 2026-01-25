@@ -93,6 +93,7 @@ import {
   generateSingleElimination,
   generateRoundRobin,
   generateSwiss,
+  shuffleTeams,
 } from "../lib/bracket";
 import { useLiveVotes } from "../hooks/useLiveVotes";
 import { useRealtimePolls } from "../hooks/useRealtimePolls";
@@ -442,9 +443,10 @@ export default function EventPage() {
   useRealtimePolls(id, setPolls, setPollOptions);
 
   const buildBracketMatches = (type) => {
-    if (type === "single_elim") return generateSingleElimination(id, teams);
-    if (type === "round_robin") return generateRoundRobin(id, teams);
-    if (type === "swiss") return generateSwiss(id, teams);
+    const shuffledTeams = shuffleTeams(teams);
+    if (type === "single_elim") return generateSingleElimination(id, shuffledTeams);
+    if (type === "round_robin") return generateRoundRobin(id, shuffledTeams);
+    if (type === "swiss") return generateSwiss(id, shuffledTeams);
     return [];
   };
 
@@ -1237,7 +1239,7 @@ export default function EventPage() {
                   <Chip
                     size="sm"
                     variant="dot"
-                    color="primary"
+                    color={event?.visibility === "public" ? "primary" : "secondary"}
                     className="capitalize"
                   >
                     {event?.visibility}
@@ -1276,17 +1278,10 @@ export default function EventPage() {
                     Edit Event
                   </Button>
 
-                  <EventStatusManager
-                    event={event}
-                    eventId={id}
-                    onStatusChange={() => fetch()}
-                    variant="flat"
-                  />
-
                   <Dropdown>
                     <DropdownTrigger>
                       <Button
-                        variant="bordered"
+                        variant="flat"
                         startContent={<Settings size={16} />}
                       >
                         Settings
@@ -1328,6 +1323,13 @@ export default function EventPage() {
                       </DropdownItem>
                     </DropdownMenu>
                   </Dropdown>
+
+                  <EventStatusManager
+                    event={event}
+                    eventId={id}
+                    onStatusChange={() => fetch()}
+                    variant="flat"
+                  />
 
                   {/* Hidden elements that need to be in DOM for logic */}
                   <div className="hidden">
