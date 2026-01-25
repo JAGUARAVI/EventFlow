@@ -335,7 +335,7 @@ export default function EventPage() {
         const scoreItems = rawScoreHistory.map((x) => ({
           ...x,
           kind: "score",
-          undo_id: x.undo_id || (undoneIds.has(x.id) ? "undone" : null),
+          undo_id: undoneIds.has(x.id) ? "undone" : null,
         }));
         const auditItems = (auditRes.data || []).map((x) => ({
           ...x,
@@ -869,7 +869,14 @@ export default function EventPage() {
       return;
 
     const t = teams.find((x) => x.id === item.team_id);
-    if (!t) return;
+    if (!t) {
+      addToast({
+        title: "Undo failed",
+        description: "Team no longer exists",
+        severity: "danger",
+      });
+      return;
+    }
 
     const currentScore = Number(t.score) || 0;
     const deltaToUndo = Number(item.delta);
