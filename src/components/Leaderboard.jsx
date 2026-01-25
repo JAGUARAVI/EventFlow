@@ -1,7 +1,7 @@
-import { Input, Button, Chip } from '@heroui/react';
+import { Input, Button, Chip, Pagination } from '@heroui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { ArrowUp, ArrowDown, Minus, Search } from 'lucide-react';
 
 function sortedWithRank(teams) {
   const arr = [...(teams || [])].map((t) => ({ ...t, _score: Number(t.score) || 0 }));
@@ -14,10 +14,25 @@ function sortedWithRank(teams) {
 
 export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigScreen = false }) {
   const [delta, setDelta] = useState({});
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const prevRanks = useRef({});
   const [movements, setMovements] = useState({});
 
+  const rowsPerPage = bigScreen ? 8 : 10;
+
   const rows = useMemo(() => sortedWithRank(teams), [teams]);
+
+  const filteredRows = useMemo(() => {
+    return rows.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()));
+  }, [rows, search]);
+
+  const paginatedRows = useMemo(() => {
+    const start = (page - 1) * rowsPerPage;
+    return filteredRows.slice(start, start + rowsPerPage);
+  }, [filteredRows, page, rowsPerPage]);
+
+  const totalPages = Math.ceil(filteredRows.length / rowsPerPage);
 
   useEffect(() => {
     const newMovements = {};
@@ -53,15 +68,36 @@ export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigSc
 
   return (
     <div aria-label="Leaderboard" className={bigScreen ? 'space-y-4 max-w-5xl mx-auto' : 'space-y-1'}>
-      <AnimatePresence>
-      {rows.map((t) => {
+      <div className="flex justify-between items-center mb-4">
+        <Input
+          placeholder="Search team..."
+          value={search}
+          onValueChange={(v) => {
+             setSearch(v);
+             setPage(1);
+          }}
+          startContent={<Search className="text-default-400" size={16} />}
+          className="max-w-xs"
+          isClearable
+          onClear={() => setSearch("")}
+        />
+        {filteredRows.length > 0 && (
+           <span className="text-small text-default-400">
+             Showing {paginatedRows.length} of {filteredRows.length}
+           </span>
+        )}
+      </div>
+
+      <AnimatePresence mode="popLayout">
+      {paginatedRows.map((t) => {
          const move = movements[t.id];
          return (
         <motion.div
           key={t.id}
           layout
-          initial={false}
-          animate={{ scale: 1, backgroundColor: move === 'up' ? 'var(--heroui-success-50)' : move === 'down' ? 'var(--heroui-danger-50)' : '' }}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0, scale: 1, backgroundColor: move === 'up' ? 'var(--heroui-success-50)' : move === 'down' ? 'var(--heroui-danger-50)' : '' }}
+          exit={{ opacity: 0, scale: 0.95 }}
           transition={{ type: 'spring', stiffness: 350, damping: 30 }}
           className={rowClass}
         >
@@ -101,8 +137,28 @@ export default function Leaderboard({ teams = [], canJudge, onScoreChange, bigSc
             </div>
           )}
         </motion.div>
-      )})}
+        );
+      })}
       </AnimatePresence>
+      
+      {filteredRows.length === 0 && (
+          <div className="text-center py-8 text-default-400">
+             No teams found
+          </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex justify-center mt-4 pt-4 border-t border-divider">
+          <Pagination
+            total={totalPages}
+            page={page}
+            onChange={setPage}
+            size={bigScreen ? 'lg' : 'md'}
+            showControls
+            color={bigScreen ? "secondary" : "primary"}
+          />
+        </div>
+      )}
     </div>
   );
 }
