@@ -80,6 +80,7 @@ import PollResults from "../components/PollResults";
 import TimelineView from "../components/TimelineView";
 import CsvManager from "../components/CsvManager";
 import EventCloneDialog from "../components/EventCloneDialog";
+import { exportPollsAnalysisToCSV } from "../lib/csvUtils";
 import AnnouncementsFeed from "../components/AnnouncementsFeed";
 import ThemeBuilder from "../components/ThemeBuilder";
 import EventStatusManager from "../components/EventStatusManager";
@@ -532,6 +533,72 @@ export default function EventPage() {
     });
     fetch();
     addToast({ title: "Poll deleted", severity: "success" });
+  };
+
+  const handleDownloadPollCSV = async (poll) => {
+    try {
+      const { data: votesData, error } = await supabase
+        .from("votes")
+        .select("*")
+        .eq("poll_id", poll.id);
+      if (error) {
+        addToast({ title: "Download failed", description: error.message, severity: "danger" });
+        return;
+      }
+
+      // attach options from pollOptions map if not present on poll
+      const pollWithOptions = { ...poll, options: poll.options || pollOptions[poll.id] || [] };
+      const csv = exportPollsAnalysisToCSV([pollWithOptions], votesData || []);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `poll-${poll.id}-analysis.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      addToast({ title: "CSV downloaded", severity: "success" });
+    } catch (err) {
+      console.error(err);
+      addToast({ title: "Download failed", description: String(err), severity: "danger" });
+    }
+  };
+
+  const handleDownloadAllPollsCSV = async () => {
+    try {
+      if (!polls || polls.length === 0) {
+        addToast({ title: "No polls", description: "There are no polls to export", severity: "warning" });
+        return;
+      }
+
+      const pollIds = polls.map((p) => p.id).filter(Boolean);
+      const { data: votesData, error } = await supabase
+        .from("votes")
+        .select("*")
+        .in("poll_id", pollIds);
+      if (error) {
+        addToast({ title: "Download failed", description: error.message, severity: "danger" });
+        return;
+      }
+
+      // Ensure each poll has options attached
+      const pollsWithOptions = polls.map((p) => ({ ...p, options: p.options || pollOptions[p.id] || [] }));
+      const csv = exportPollsAnalysisToCSV(pollsWithOptions, votesData || []);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `event-${id}-polls-analysis.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      addToast({ title: "CSV downloaded", severity: "success" });
+    } catch (err) {
+      console.error(err);
+      addToast({ title: "Download failed", description: String(err), severity: "danger" });
+    }
   };
 
   const handleDeleteEvent = async () => {
@@ -1812,6 +1879,16 @@ export default function EventPage() {
                           Create Poll
                         </Button>
                       )}
+                      {canManage && polls && polls.length > 0 && (
+                        <Button
+                          color="flat"
+                          variant="outline"
+                          onPress={() => handleDownloadAllPollsCSV()}
+                          startContent={<Download size={16} />}
+                        >
+                          Download All Polls (Analysis)
+                        </Button>
+                      )}
                     </div>
 
                     {polls.length === 0 ? (
@@ -2019,6 +2096,13 @@ export default function EventPage() {
                                               Award Points
                                             </DropdownItem>
                                           )}
+                                          <DropdownItem
+                                            key="download"
+                                            startContent={<Download size={14} />}
+                                            onPress={() => handleDownloadPollCSV(poll)}
+                                          >
+                                            Download CSV (Analysis)
+                                          </DropdownItem>
                                           <DropdownItem
                                             key="delete"
                                             className="text-danger"
