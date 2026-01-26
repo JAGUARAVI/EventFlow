@@ -69,6 +69,7 @@ import {
   Mail,
   QrCode,
   Edit,
+  ClipboardList,
 } from "lucide-react";
 import { supabase, withRetry } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
@@ -95,6 +96,7 @@ import MetadataTemplateBuilder from "../components/MetadataTemplateBuilder";
 import MetadataFieldsForm from "../components/MetadataFieldsForm";
 import TeamMetadataDisplay from "../components/TeamMetadataDisplay";
 import PdfExportDialog from "../components/PdfExportDialog";
+import EvalScheduler from "../components/EvalScheduler";
 import {
   generateSingleElimination,
   generateRoundRobin,
@@ -2614,6 +2616,18 @@ export default function EventPage() {
                       </div>
                     )}
                   </div>
+                </Tab>
+              )}
+
+              {hasType("evals") && (
+                <Tab key="evals" title="Evaluations" className="p-3 md:p-6">
+                  <EvalScheduler
+                    eventId={id}
+                    teams={teams}
+                    canManage={canManage}
+                    canJudge={canJudge}
+                    currentUserId={user?.id}
+                  />
                 </Tab>
               )}
 

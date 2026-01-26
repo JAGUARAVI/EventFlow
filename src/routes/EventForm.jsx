@@ -24,6 +24,7 @@ const EVENT_TYPES = [
   { value: 'points', label: 'Points' },
   { value: 'bracket', label: 'Bracket' },
   { value: 'poll', label: 'Poll' },
+  { value: 'evals', label: 'Evaluations' },
 ];
 
 const VISIBILITY = [
