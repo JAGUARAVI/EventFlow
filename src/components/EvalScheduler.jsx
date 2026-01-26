@@ -51,6 +51,10 @@ import {
   XCircle,
   Eye,
   Search,
+  Wand2,
+  Shuffle,
+  ChevronRight,
+  ChevronsRight,
 } from 'lucide-react';
 import { supabase, withRetry } from '../lib/supabase';
 import { useRealtimeEvals } from '../hooks/useRealtimeEvals';
@@ -102,6 +106,21 @@ export default function EvalScheduler({
   const [judgeQuery, setJudgeQuery] = useState('');
   const [judgeSearchResults, setJudgeSearchResults] = useState([]);
   const [teamSearch, setTeamSearch] = useState('');
+  
+  // Generate schedule modal state
+  const [generatePanel, setGeneratePanel] = useState(null);
+  const [generateTeams, setGenerateTeams] = useState([]);
+  const [generateDuration, setGenerateDuration] = useState('15');
+  const [generateGap, setGenerateGap] = useState('5');
+  const [generateStartDate, setGenerateStartDate] = useState('');
+  const [generateStartTime, setGenerateStartTime] = useState('09:00');
+  const [generating, setGenerating] = useState(false);
+  
+  // Cascade edit state
+  const [cascadeSlot, setCascadeSlot] = useState(null);
+  const [cascadeNewDate, setCascadeNewDate] = useState('');
+  const [cascadeNewTime, setCascadeNewTime] = useState('');
+  const [cascadeApplyToAll, setCascadeApplyToAll] = useState(true);
 
   // Modals
   const {
@@ -133,6 +152,16 @@ export default function EvalScheduler({
     isOpen: isDescriptionOpen,
     onOpen: onDescriptionOpen,
     onClose: onDescriptionClose,
+  } = useDisclosure();
+  const {
+    isOpen: isGenerateOpen,
+    onOpen: onGenerateOpen,
+    onClose: onGenerateClose,
+  } = useDisclosure();
+  const {
+    isOpen: isCascadeOpen,
+    onOpen: onCascadeOpen,
+    onClose: onCascadeClose,
   } = useDisclosure();
   const [viewingPanel, setViewingPanel] = useState(null);
 
@@ -364,6 +393,177 @@ export default function EvalScheduler({
     });
     addToast({ title: 'Slot removed', severity: 'success' });
     fetchData();
+  };
+
+  /**
+   * Get adjusted time for a slot considering panel delay
+   */
+  const getAdjustedTime = useCallback((slot, panel) => {
+    const originalTime = new Date(slot.scheduled_at);
+    if (panel?.status === 'delayed' && panel.delay_minutes > 0 && slot.status === 'scheduled') {
+      return new Date(originalTime.getTime() + panel.delay_minutes * 60000);
+    }
+    return originalTime;
+  }, []);
+
+  /**
+   * Generate schedule modal
+   */
+  const openGenerateModal = (panel) => {
+    setGeneratePanel(panel);
+    // Get teams already scheduled in this panel
+    const scheduledTeamIds = new Set(slots.filter(s => s.panel_id === panel.id).map(s => s.team_id));
+    // Pre-select teams not yet scheduled
+    setGenerateTeams(teams.filter(t => !scheduledTeamIds.has(t.id)).map(t => t.id));
+    setGenerateDuration('15');
+    setGenerateGap('5');
+    // Default to today
+    const now = new Date();
+    setGenerateStartDate(now.toISOString().split('T')[0]);
+    setGenerateStartTime('09:00');
+    onGenerateOpen();
+  };
+
+  const toggleTeamInGenerate = (teamId) => {
+    setGenerateTeams(prev => 
+      prev.includes(teamId) 
+        ? prev.filter(id => id !== teamId)
+        : [...prev, teamId]
+    );
+  };
+
+  const shuffleGenerateTeams = () => {
+    setGenerateTeams(prev => {
+      const shuffled = [...prev];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled;
+    });
+  };
+
+  const handleGenerateSchedule = async () => {
+    if (!generatePanel || generateTeams.length === 0) {
+      addToast({ title: 'Select at least one team', severity: 'warning' });
+      return;
+    }
+    
+    setGenerating(true);
+    try {
+      const duration = parseInt(generateDuration, 10) || 15;
+      const gap = parseInt(generateGap, 10) || 5;
+      const slotInterval = duration + gap;
+      
+      let currentTime = new Date(`${generateStartDate}T${generateStartTime}`);
+      const slotsToInsert = [];
+      
+      for (const teamId of generateTeams) {
+        slotsToInsert.push({
+          panel_id: generatePanel.id,
+          team_id: teamId,
+          scheduled_at: currentTime.toISOString(),
+          duration_minutes: duration,
+          status: 'scheduled',
+        });
+        currentTime = new Date(currentTime.getTime() + slotInterval * 60000);
+      }
+      
+      const { error } = await supabase.from('eval_slots').insert(slotsToInsert);
+      if (error) throw error;
+      
+      await supabase.from('event_audit').insert({
+        event_id: eventId,
+        action: 'eval_slots.generate',
+        entity_type: 'eval_panel',
+        entity_id: generatePanel.id,
+        message: `Generated ${slotsToInsert.length} eval slots for panel "${generatePanel.name}"`,
+        created_by: currentUserId,
+        metadata: { team_count: slotsToInsert.length, duration, gap },
+      });
+      
+      addToast({ title: `Generated ${slotsToInsert.length} slots`, severity: 'success' });
+      onGenerateClose();
+      fetchData();
+    } catch (err) {
+      addToast({ title: 'Generation failed', description: err.message, severity: 'danger' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  /**
+   * Cascade edit - open modal for editing slot time with cascade option
+   */
+  const openCascadeEdit = (slot, panel) => {
+    setCascadeSlot({ slot, panel });
+    const dt = new Date(slot.scheduled_at);
+    setCascadeNewDate(dt.toISOString().split('T')[0]);
+    setCascadeNewTime(dt.toTimeString().slice(0, 5));
+    setCascadeApplyToAll(true);
+    onCascadeOpen();
+  };
+
+  const handleCascadeEdit = async () => {
+    if (!cascadeSlot) return;
+    
+    const { slot, panel } = cascadeSlot;
+    const oldTime = new Date(slot.scheduled_at);
+    const newTime = new Date(`${cascadeNewDate}T${cascadeNewTime}`);
+    const timeDelta = newTime.getTime() - oldTime.getTime();
+    
+    if (timeDelta === 0) {
+      onCascadeClose();
+      return;
+    }
+    
+    try {
+      if (cascadeApplyToAll) {
+        // Get all slots after this one in the same panel
+        const panelSlots = slots
+          .filter(s => s.panel_id === panel.id)
+          .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+        
+        const slotIndex = panelSlots.findIndex(s => s.id === slot.id);
+        const slotsToUpdate = panelSlots.slice(slotIndex);
+        
+        // Update all slots from this one onwards
+        for (const s of slotsToUpdate) {
+          const originalTime = new Date(s.scheduled_at);
+          const adjustedTime = new Date(originalTime.getTime() + timeDelta);
+          
+          await supabase
+            .from('eval_slots')
+            .update({ scheduled_at: adjustedTime.toISOString() })
+            .eq('id', s.id);
+        }
+        
+        await supabase.from('event_audit').insert({
+          event_id: eventId,
+          action: 'eval_slots.cascade_edit',
+          entity_type: 'eval_panel',
+          entity_id: panel.id,
+          message: `Cascade edited ${slotsToUpdate.length} slots in panel "${panel.name}"`,
+          created_by: currentUserId,
+          metadata: { time_delta_minutes: timeDelta / 60000, slots_affected: slotsToUpdate.length },
+        });
+        
+        addToast({ title: `Updated ${slotsToUpdate.length} slots`, severity: 'success' });
+      } else {
+        // Update only this slot
+        await supabase
+          .from('eval_slots')
+          .update({ scheduled_at: newTime.toISOString() })
+          .eq('id', slot.id);
+        
+        addToast({ title: 'Slot updated', severity: 'success' });
+      }
+      
+      onCascadeClose();
+      fetchData();
+    } catch (err) {
+      addToast({ title: 'Update failed', description: err.message, severity: 'danger' });
+    }
   };
 
   /**
@@ -710,6 +910,15 @@ export default function EvalScheduler({
                         >
                           Schedule
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="secondary"
+                          startContent={<Wand2 size={16} />}
+                          onPress={() => openGenerateModal(panel)}
+                        >
+                          Generate
+                        </Button>
                         <Dropdown>
                           <DropdownTrigger>
                             <Button size="sm" variant="flat" startContent={<Timer size={16} />}>
@@ -783,6 +992,9 @@ export default function EvalScheduler({
                           .map((slot) => {
                             const team = teams.find((t) => t.id === slot.team_id);
                             const effectiveStatus = getEffectiveSlotStatus(slot, panel);
+                            const originalTime = new Date(slot.scheduled_at);
+                            const adjustedTime = getAdjustedTime(slot, panel);
+                            const isDelayed = panel.status === 'delayed' && slot.status === 'scheduled';
                             const statusCfg =
                               effectiveStatus === 'paused'
                                 ? { color: 'warning', icon: Pause, label: 'Paused' }
@@ -805,13 +1017,24 @@ export default function EvalScheduler({
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex flex-col">
-                                    <span>{new Date(slot.scheduled_at).toLocaleDateString()}</span>
-                                    <span className="text-default-500 text-sm">
-                                      {new Date(slot.scheduled_at).toLocaleTimeString([], {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      })}
-                                    </span>
+                                    <span>{adjustedTime.toLocaleDateString()}</span>
+                                    <div className="flex items-center gap-1">
+                                      {isDelayed && (
+                                        <span className="text-default-400 text-sm line-through">
+                                          {originalTime.toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })}
+                                        </span>
+                                      )}
+                                      <span className={`text-sm ${isDelayed ? 'text-danger font-medium' : 'text-default-500'}`}>
+                                        {isDelayed && '→ '}
+                                        {adjustedTime.toLocaleTimeString([], {
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                        })}
+                                      </span>
+                                    </div>
                                   </div>
                                 </TableCell>
                                 <TableCell>{slot.duration_minutes} min</TableCell>
@@ -878,6 +1101,15 @@ export default function EvalScheduler({
                                         >
                                           Edit
                                         </DropdownItem>
+                                        {['scheduled', 'rescheduled'].includes(slot.status) && (
+                                          <DropdownItem
+                                            key="cascade"
+                                            startContent={<ChevronsRight size={16} />}
+                                            onPress={() => openCascadeEdit(slot, panel)}
+                                          >
+                                            Edit Time (Cascade)
+                                          </DropdownItem>
+                                        )}
                                         {isPanelManager && (
                                           <DropdownItem
                                             key="delete"
@@ -1084,6 +1316,288 @@ export default function EvalScheduler({
           </ModalBody>
           <ModalFooter>
             <Button onPress={onDescriptionClose}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Generate Schedule Modal */}
+      <Modal isOpen={isGenerateOpen} onClose={onGenerateClose} size="2xl" scrollBehavior="inside">
+        <ModalContent>
+          <ModalHeader>Generate Evaluation Schedule - {generatePanel?.name}</ModalHeader>
+          <ModalBody className="space-y-4">
+            {/* Team Selection */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-semibold">Select Teams ({generateTeams.length} selected)</h4>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    onPress={() => setGenerateTeams(teams.map((t) => t.id))}
+                  >
+                    Select All
+                  </Button>
+                  <Button size="sm" variant="flat" onPress={() => setGenerateTeams([])}>
+                    Clear
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    color="secondary"
+                    startContent={<Shuffle size={14} />}
+                    onPress={shuffleGenerateTeams}
+                    isDisabled={generateTeams.length < 2}
+                  >
+                    Shuffle
+                  </Button>
+                </div>
+              </div>
+              <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
+                {teams.map((team) => (
+                  <div
+                    key={team.id}
+                    className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                      generateTeams.includes(team.id) ? 'bg-primary-100' : 'hover:bg-default-100'
+                    }`}
+                    onClick={() => toggleTeamInGenerate(team.id)}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={generateTeams.includes(team.id)}
+                      onChange={() => toggleTeamInGenerate(team.id)}
+                      className="pointer-events-none"
+                    />
+                    <span>{team.name}</span>
+                    {generateTeams.includes(team.id) && (
+                      <Chip size="sm" variant="flat">
+                        #{generateTeams.indexOf(team.id) + 1}
+                      </Chip>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Divider />
+
+            {/* Schedule Settings */}
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                type="number"
+                label="Duration per eval (minutes)"
+                value={generateDuration}
+                onValueChange={setGenerateDuration}
+                min={1}
+                endContent={<span className="text-default-400 text-sm">min</span>}
+              />
+              <Input
+                type="number"
+                label="Gap between evals (minutes)"
+                value={generateGap}
+                onValueChange={setGenerateGap}
+                min={0}
+                endContent={<span className="text-default-400 text-sm">min</span>}
+              />
+              <Input
+                type="date"
+                label="Start Date"
+                value={generateStartDate}
+                onValueChange={setGenerateStartDate}
+              />
+              <Input
+                type="time"
+                label="Start Time"
+                value={generateStartTime}
+                onValueChange={setGenerateStartTime}
+              />
+            </div>
+
+            <Divider />
+
+            {/* Preview */}
+            <div>
+              <h4 className="text-sm font-semibold mb-2">Preview</h4>
+              {generateTeams.length > 0 && generateStartDate && generateStartTime ? (
+                <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
+                  {generateTeams.map((teamId, index) => {
+                    const team = teams.find((t) => t.id === teamId);
+                    const startMinutes =
+                      index * (parseInt(generateDuration) + parseInt(generateGap));
+                    const startDate = new Date(`${generateStartDate}T${generateStartTime}`);
+                    startDate.setMinutes(startDate.getMinutes() + startMinutes);
+                    return (
+                      <div
+                        key={teamId}
+                        className="flex items-center justify-between p-2 bg-default-50 rounded-lg"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Chip size="sm" variant="flat">
+                            {index + 1}
+                          </Chip>
+                          <span className="font-medium">{team?.name}</span>
+                        </div>
+                        <div className="text-sm text-default-500">
+                          {startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {' - '}
+                          {new Date(
+                            startDate.getTime() + parseInt(generateDuration) * 60000
+                          ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-default-500 text-sm">
+                  Select teams and set start date/time to see preview.
+                </p>
+              )}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onGenerateClose}>
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              startContent={<Wand2 size={16} />}
+              onPress={handleGenerateSchedule}
+              isDisabled={!generateTeams.length || !generateStartDate || !generateStartTime}
+            >
+              Generate {generateTeams.length} Slots
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Cascade Edit Modal */}
+      <Modal isOpen={isCascadeOpen} onClose={onCascadeClose} size="lg">
+        <ModalContent>
+          <ModalHeader>
+            <div className="flex items-center gap-2">
+              <ChevronsRight size={20} />
+              Edit Time (Cascade)
+            </div>
+          </ModalHeader>
+          <ModalBody className="space-y-4">
+            {cascadeSlot && (
+              <>
+                {/* Current Slot Info */}
+                <div className="p-3 bg-default-100 rounded-lg">
+                  <p className="text-sm text-default-500">Current Slot</p>
+                  <p className="font-semibold">
+                    {teams.find((t) => t.id === cascadeSlot.team_id)?.name}
+                  </p>
+                  <p className="text-sm">
+                    {new Date(cascadeSlot.scheduled_time).toLocaleString()}
+                  </p>
+                </div>
+
+                {/* New Time */}
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    type="date"
+                    label="New Date"
+                    value={cascadeNewDate}
+                    onValueChange={setCascadeNewDate}
+                  />
+                  <Input
+                    type="time"
+                    label="New Time"
+                    value={cascadeNewTime}
+                    onValueChange={setCascadeNewTime}
+                  />
+                </div>
+
+                {/* Cascade Option */}
+                <div
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer border-2 transition-colors ${
+                    cascadeApplyToAll ? 'border-primary bg-primary-50' : 'border-default-200'
+                  }`}
+                  onClick={() => setCascadeApplyToAll(!cascadeApplyToAll)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={cascadeApplyToAll}
+                    onChange={(e) => setCascadeApplyToAll(e.target.checked)}
+                    className="pointer-events-none"
+                  />
+                  <div>
+                    <p className="font-medium">Apply to subsequent slots</p>
+                    <p className="text-sm text-default-500">
+                      All slots after this one will be shifted by the same time difference
+                    </p>
+                  </div>
+                </div>
+
+                {/* Preview of affected slots */}
+                {cascadeApplyToAll && cascadeNewDate && cascadeNewTime && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Affected Slots</h4>
+                    <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
+                      {(() => {
+                        const panel = panels.find((p) => p.id === cascadeSlot.panel_id);
+                        const panelSlots = slots
+                          .filter((s) => s.panel_id === cascadeSlot.panel_id)
+                          .sort(
+                            (a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time)
+                          );
+                        const currentIndex = panelSlots.findIndex(
+                          (s) => s.id === cascadeSlot.id
+                        );
+                        const affectedSlots = panelSlots.slice(currentIndex);
+
+                        const oldTime = new Date(cascadeSlot.scheduled_time);
+                        const newTime = new Date(`${cascadeNewDate}T${cascadeNewTime}`);
+                        const diffMs = newTime - oldTime;
+
+                        return affectedSlots.map((slot, idx) => {
+                          const team = teams.find((t) => t.id === slot.team_id);
+                          const originalTime = new Date(slot.scheduled_time);
+                          const adjustedTime = new Date(originalTime.getTime() + diffMs);
+                          return (
+                            <div
+                              key={slot.id}
+                              className="flex items-center justify-between p-2 bg-default-50 rounded-lg"
+                            >
+                              <span className="font-medium">{team?.name}</span>
+                              <div className="text-sm flex items-center gap-2">
+                                <span className="text-default-400 line-through">
+                                  {originalTime.toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                                <ChevronRight size={14} />
+                                <span className="text-primary">
+                                  {adjustedTime.toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onCascadeClose}>
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              startContent={<ChevronsRight size={16} />}
+              onPress={handleCascadeEdit}
+              isDisabled={!cascadeNewDate || !cascadeNewTime}
+            >
+              {cascadeApplyToAll ? 'Apply to All' : 'Update Slot'}
+            </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
