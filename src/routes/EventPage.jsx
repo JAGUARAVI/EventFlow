@@ -68,6 +68,7 @@ import {
   Eye,
   Mail,
   QrCode,
+  Edit,
 } from "lucide-react";
 import { supabase, withRetry } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
@@ -81,6 +82,7 @@ import MatchEditor from "../components/MatchEditor";
 import PollEditor from "../components/PollEditor";
 import PollVote from "../components/PollVote";
 import PollResults from "../components/PollResults";
+import PollVoteManager from "../components/PollVoteManager";
 import TimelineView from "../components/TimelineView";
 import CsvManager from "../components/CsvManager";
 import EventCloneDialog from "../components/EventCloneDialog";
@@ -242,8 +244,14 @@ export default function EventPage() {
     onOpen: onQrOpen,
     onClose: onQrClose,
   } = useDisclosure();
+  const {
+    isOpen: isVoteManagerOpen,
+    onOpen: onVoteManagerOpen,
+    onClose: onVoteManagerClose,
+  } = useDisclosure();
   const [selectedPoc, setSelectedPoc] = useState(null);
   const [pocLoading, setPocLoading] = useState(false);
+  const [managingPoll, setManagingPoll] = useState(null);
 
   const role = profile?.role || "";
   const isAdmin = role === "admin";
@@ -256,8 +264,9 @@ export default function EventPage() {
           ? [event.type]
           : ["points"];
   const hasType = (t) => eventTypes.includes(t);
+  const isCoManager = judges.some((j) => j.user_id === user?.id && j.can_manage);
   const canManage =
-    event && (isAdmin || (event.created_by === user?.id && role !== "viewer"));
+    event && (isAdmin || (event.created_by === user?.id && role !== "viewer") || isCoManager);
   const isCompleted = event?.status === "completed";
   const canJudge =
     event && (canManage || judges.some((j) => j.user_id === user?.id));
@@ -323,7 +332,7 @@ export default function EventPage() {
               .order("created_at"),
             supabase
               .from("event_judges")
-              .select("user_id, created_at")
+              .select("user_id, created_at, can_manage")
               .eq("event_id", id),
             supabase
               .from("score_history")
@@ -996,6 +1005,7 @@ export default function EventPage() {
     if (!name) return;
     setTeamSaving(true);
     if (editingTeam) {
+      const oldName = editingTeam.name;
       const { error: e } = await supabase
         .from("teams")
         .update({ name, metadata_values: teamMetadata })
@@ -1005,20 +1015,46 @@ export default function EventPage() {
         setError(e.message);
         return;
       }
+      // Audit log for team update
+      await supabase.from("event_audit").insert({
+        event_id: id,
+        action: "team.update",
+        entity_type: "team",
+        entity_id: editingTeam.id,
+        message: oldName !== name 
+          ? `Renamed team "${oldName}" to "${name}"`
+          : `Updated team "${name}"`,
+        created_by: user?.id,
+        metadata: { old_name: oldName, new_name: name, metadata_values: teamMetadata },
+      });
     } else {
-      const { error: e } = await supabase.from("teams").insert([
-        {
-          event_id: id,
-          name,
-          metadata_values: teamMetadata,
-          created_by: user?.id,
-        },
-      ]);
+      const { data: newTeam, error: e } = await supabase
+        .from("teams")
+        .insert([
+          {
+            event_id: id,
+            name,
+            metadata_values: teamMetadata,
+            created_by: user?.id,
+          },
+        ])
+        .select()
+        .single();
       setTeamSaving(false);
       if (e) {
         setError(e.message);
         return;
       }
+      // Audit log for team creation
+      await supabase.from("event_audit").insert({
+        event_id: id,
+        action: "team.create",
+        entity_type: "team",
+        entity_id: newTeam?.id,
+        message: `Created team "${name}"`,
+        created_by: user?.id,
+        metadata: { name, metadata_values: teamMetadata },
+      });
     }
     onTeamClose();
     fetch();
@@ -1026,9 +1062,23 @@ export default function EventPage() {
 
   const removeTeam = async (teamId) => {
     if (!confirm("Remove this team?")) return;
+    const teamToRemove = teams.find(t => t.id === teamId);
     const { error: e } = await supabase.from("teams").delete().eq("id", teamId);
-    if (e) setError(e.message);
-    else fetch();
+    if (e) {
+      setError(e.message);
+    } else {
+      // Audit log for team deletion
+      await supabase.from("event_audit").insert({
+        event_id: id,
+        action: "team.delete",
+        entity_type: "team",
+        entity_id: teamId,
+        message: `Deleted team "${teamToRemove?.name || 'Unknown'}"`,
+        created_by: user?.id,
+        metadata: { name: teamToRemove?.name, score: teamToRemove?.score },
+      });
+      fetch();
+    }
   };
 
   const updateRegistrationStatus = async (newStatus) => {
@@ -1538,18 +1588,18 @@ export default function EventPage() {
                     to={`/events/${id}/edit`}
                     color="primary"
                     variant="shadow"
-                    startContent={<Edit3 size={16} />}
+                    startContent={<Settings size={16} />}
                   >
-                    Edit Event
+                    Event Settings
                   </Button>
 
                   <Dropdown>
                     <DropdownTrigger>
                       <Button
                         variant="flat"
-                        startContent={<Settings size={16} />}
+                        startContent={<Edit size={16} />}
                       >
-                        Settings
+                        Actions
                       </Button>
                     </DropdownTrigger>
                     <DropdownMenu aria-label="Event actions">
@@ -2192,9 +2242,8 @@ export default function EventPage() {
                       </Button>
                     )}
                     <Button
-                      as={HeroLink}
+                      as={Link}
                       href={`/events/${id}/leaderboard`}
-                      isExternal
                       size="sm"
                       color="secondary"
                       variant="flat"
@@ -2489,6 +2538,16 @@ export default function EventPage() {
                                               Award Points
                                             </DropdownItem>
                                           )}
+                                          <DropdownItem
+                                            key="manage-votes"
+                                            startContent={<Users size={14} />}
+                                            onPress={() => {
+                                              setManagingPoll(poll);
+                                              onVoteManagerOpen();
+                                            }}
+                                          >
+                                            Manage Votes
+                                          </DropdownItem>
                                           <DropdownItem
                                             key="download"
                                             startContent={<Download size={14} />}
@@ -2935,6 +2994,21 @@ export default function EventPage() {
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      {/* Poll Vote Manager Modal */}
+      <PollVoteManager
+        isOpen={isVoteManagerOpen}
+        onClose={() => {
+          onVoteManagerClose();
+          setManagingPoll(null);
+        }}
+        poll={managingPoll}
+        options={managingPoll ? (pollOptions[managingPoll.id] || []) : []}
+        votes={managingPoll ? getVotesForPoll(managingPoll.id) : []}
+        eventId={id}
+        userId={user?.id}
+        onRefresh={fetch}
+      />
 
     </div>
   );

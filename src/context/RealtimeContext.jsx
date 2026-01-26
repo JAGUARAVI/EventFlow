@@ -474,20 +474,20 @@ export function useRealtimeTable(table, eventId, handler, options = {}) {
   const { isReady, subscribe } = useRealtime();
   const handlerRef = useRef(handler);
   const unsubscribeRef = useRef(null);
-  const optionsRef = useRef(options);
   
-  // Keep refs updated
+  // Keep handler ref updated
   useEffect(() => {
     handlerRef.current = handler;
   }, [handler]);
-  
-  useEffect(() => {
-    optionsRef.current = options;
-  }, [options]);
+
+  // Extract filter from options for dependency tracking
+  const filter = options.filter;
+  const broadcastEvent = options.broadcastEvent;
+  const onBroadcast = options.onBroadcast;
 
   useEffect(() => {
-    // Don't subscribe until ready and we have an eventId (or custom filter)
-    if (!isReady || (!eventId && !optionsRef.current.filter)) {
+    // Don't subscribe until ready and we have an eventId or custom filter
+    if (!isReady || (!eventId && !filter)) {
       return;
     }
 
@@ -495,16 +495,16 @@ export function useRealtimeTable(table, eventId, handler, options = {}) {
       handlerRef.current?.(payload);
     };
 
-    const wrappedBroadcastHandler = optionsRef.current.onBroadcast 
-      ? (payload) => optionsRef.current.onBroadcast?.(payload)
+    const wrappedBroadcastHandler = onBroadcast 
+      ? (payload) => onBroadcast?.(payload)
       : undefined;
 
     unsubscribeRef.current = subscribe(
       { 
         table, 
         eventId, 
-        filter: optionsRef.current.filter,
-        broadcastEvent: optionsRef.current.broadcastEvent,
+        filter,
+        broadcastEvent,
       },
       wrappedHandler,
       wrappedBroadcastHandler
@@ -516,7 +516,7 @@ export function useRealtimeTable(table, eventId, handler, options = {}) {
         unsubscribeRef.current = null;
       }
     };
-  }, [isReady, eventId, table, subscribe]);
+  }, [isReady, eventId, table, filter, broadcastEvent, onBroadcast, subscribe]);
 
   return null;
 }

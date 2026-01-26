@@ -130,20 +130,28 @@ export default function Profile() {
 
     setUpdatingPassword(true);
 
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    
-    setUpdatingPassword(false);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
 
-    if (error) {
+      if (error) {
+        addToast({
+          title: "Update failed",
+          description: error.message,
+          severity: "danger",
+        });
+      } else {
+        addToast({ title: "Password updated", severity: "success" });
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+    } catch (err) {
       addToast({
         title: "Update failed",
-        description: error.message,
+        description: err.message || "An unexpected error occurred",
         severity: "danger",
       });
-    } else {
-      addToast({ title: "Password updated", severity: "success" });
-      setNewPassword("");
-      setConfirmPassword("");
+    } finally {
+      setUpdatingPassword(false);
     }
   };
 
