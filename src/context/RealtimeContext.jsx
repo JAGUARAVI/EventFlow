@@ -385,10 +385,30 @@ export function RealtimeProvider({ children }) {
 
   // Listen for visibility changes to reconnect when tab becomes visible
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && connectionState === ConnectionState.DISCONNECTED) {
-        console.info('[Realtime] Tab became visible, checking connection...');
-        reconnect();
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        // Only do anything if there are active subscriptions
+        const hasActiveSubscriptions = subscriptionsRef.current.size > 0;
+        
+        if (hasActiveSubscriptions) {
+          // Refresh the auth session (token might be stale after tab was hidden)
+          try {
+            const { data, error } = await supabase.auth.getSession();
+            if (error) {
+              console.warn('[Realtime] Failed to refresh session on visibility change:', error);
+            } else if (data.session) {
+              console.debug('[Realtime] Session refreshed on visibility change');
+            }
+          } catch (err) {
+            console.warn('[Realtime] Error refreshing session:', err);
+          }
+          
+          // Reconnect if connection is not healthy
+          if (connectionState === ConnectionState.DISCONNECTED) {
+            console.info('[Realtime] Tab became visible with active subscriptions, reconnecting...');
+            reconnect();
+          }
+        }
       }
     };
 
@@ -398,9 +418,20 @@ export function RealtimeProvider({ children }) {
 
   // Also listen for online/offline events
   useEffect(() => {
-    const handleOnline = () => {
-      console.info('[Realtime] Network came online, reconnecting...');
-      reconnect();
+    const handleOnline = async () => {
+      // Refresh auth session first
+      try {
+        await supabase.auth.getSession();
+      } catch (err) {
+        console.warn('[Realtime] Error refreshing session on online:', err);
+      }
+      
+      // Only reconnect if there are active subscriptions
+      const hasActiveSubscriptions = subscriptionsRef.current.size > 0;
+      if (hasActiveSubscriptions) {
+        console.info('[Realtime] Network came online, reconnecting...');
+        reconnect();
+      }
     };
 
     window.addEventListener('online', handleOnline);

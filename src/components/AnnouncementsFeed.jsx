@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Card,
   CardBody,
@@ -19,6 +19,7 @@ import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
 import { playNotificationSound, sendPushNotification } from '../lib/notifications';
 import { useAuth } from '../hooks/useAuth';
+import { useRealtimeTable } from '../context/RealtimeContext';
 
 export default function AnnouncementsFeed({ eventId, canManage = false }) {
   const { user, profile } = useAuth();
@@ -31,11 +32,18 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
   const [editingId, setEditingId] = useState(null);
   
   const userIdRef = useRef(user?.id);
-  const channelRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     userIdRef.current = user?.id;
   }, [user?.id]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const fetchProfile = async (userId) => {
     const { data } = await supabase
@@ -46,76 +54,55 @@ export default function AnnouncementsFeed({ eventId, canManage = false }) {
     return data || { id: userId };
   };
 
-  useEffect(() => {
-    loadAnnouncements();
+  const handleRealtimeChange = useCallback(async (payload) => {
+    if (!isMountedRef.current) return;
 
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel(`announcements:event_id=eq.${eventId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'announcements',
-          filter: `event_id=eq.${eventId}`,
-        },
-        async (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const author = await fetchProfile(payload.new.created_by);
-            setAnnouncements((prev) => {
-              // Avoid duplicates
-              if (prev.some(a => a.id === payload.new.id)) return prev;
-              return [{ ...payload.new, author }, ...prev];
-            });
-
-            if (payload.new.created_by !== userIdRef.current) {
-              playNotificationSound('announcement.wav');
-              sendPushNotification({
-                title: 'New Announcement',
-                body: payload.new.title || 'A new announcement was posted.',
-                tag: `announcement-${payload.new.id}`,
-                data: { eventId, announcementId: payload.new.id },
-              });
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            setAnnouncements((prev) => {
-              const updated = prev.map((a) => {
-                if (a.id === payload.new.id) {
-                  // Preserve author if created_by hasn't changed, otherwise we'd need to fetch
-                  return { ...payload.new, author: a.created_by === payload.new.created_by ? a.author : undefined };
-                }
-                return a;
-              });
-              
-              // Re-sort: Pinned first, then by date descending
-              return updated.sort((a, b) => {
-                if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-                return new Date(b.created_at) - new Date(a.created_at);
-              });
-            });
-            // If created_by changed (unlikely for announcements), we might have undefined author. 
-            // Could add a check to fetch it, but skipping for simplicity.
-          } else if (payload.eventType === 'DELETE') {
-            setAnnouncements((prev) => prev.filter((a) => a.id !== payload.old.id));
-          }
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('Announcements channel error:', err);
-        }
+    if (payload.eventType === 'INSERT') {
+      const author = await fetchProfile(payload.new.created_by);
+      if (!isMountedRef.current) return;
+      
+      setAnnouncements((prev) => {
+        // Avoid duplicates
+        if (prev.some(a => a.id === payload.new.id)) return prev;
+        return [{ ...payload.new, author }, ...prev];
       });
 
-    channelRef.current = channel;
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
+      if (payload.new.created_by !== userIdRef.current) {
+        playNotificationSound('announcement.wav');
+        sendPushNotification({
+          title: 'New Announcement',
+          body: payload.new.title || 'A new announcement was posted.',
+          tag: `announcement-${payload.new.id}`,
+          data: { eventId, announcementId: payload.new.id },
+        });
       }
-    };
-  }, [eventId]); // Removed user?.id dependency - use ref instead
+    } else if (payload.eventType === 'UPDATE') {
+      setAnnouncements((prev) => {
+        const updated = prev.map((a) => {
+          if (a.id === payload.new.id) {
+            // Preserve author if created_by hasn't changed
+            return { ...payload.new, author: a.created_by === payload.new.created_by ? a.author : undefined };
+          }
+          return a;
+        });
+        
+        // Re-sort: Pinned first, then by date descending
+        return updated.sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          return new Date(b.created_at) - new Date(a.created_at);
+        });
+      });
+    } else if (payload.eventType === 'DELETE') {
+      setAnnouncements((prev) => prev.filter((a) => a.id !== payload.old.id));
+    }
+  }, [eventId]);
+
+  // Use centralized realtime subscriptions
+  useRealtimeTable('announcements', eventId, handleRealtimeChange);
+
+  useEffect(() => {
+    loadAnnouncements();
+  }, [eventId]);
 
   const loadAnnouncements = async () => {
     try {

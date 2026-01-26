@@ -26,7 +26,7 @@ import { useAuth } from '../hooks/useAuth';
 export default function Dashboard() {
     const { user, profile, loading: authLoading } = useAuth();
     const [events, setEvents] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false); // Start false, will show authLoading instead
     const [stats, setStats] = useState(null);
 
     const canCreate = profile && ["admin", "club_coordinator"].includes(profile.role);
@@ -35,13 +35,17 @@ export default function Dashboard() {
 
     // Keep HEAD Logic: useCallback wrapper for fetching
     const fetchDashboardData = useCallback(async (showLoading = true) => {
-        // Don't fetch if auth is still loading - wait for it to complete
-        if (authLoading) return;
+        // Early return if auth is still loading
+        if (authLoading) {
+            return;
+        }
         
+        // If auth is done but no user/profile, stop loading
         if (!user?.id || !profile?.role) {
             setLoading(false);
             return;
         }
+        
         if (showLoading) setLoading(true);
 
         try {
@@ -180,7 +184,7 @@ export default function Dashboard() {
                     </span>
                 </div>
 
-                {loading ? (
+                {(loading || authLoading) ? (
                     <div className="flex justify-center py-24">
                         <Spinner size="lg" />
                     </div>

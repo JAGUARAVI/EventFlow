@@ -67,6 +67,29 @@ export function AuthProvider({ children }) {
     };
   }, [fetchProfile]);
 
+  // Refresh session when tab becomes visible (handles stale tokens after being idle)
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && user) {
+        try {
+          const { data, error } = await supabase.auth.getSession();
+          if (error) {
+            console.warn('[Auth] Session refresh failed on visibility change:', error);
+          } else if (data.session && data.session.user.id !== user.id) {
+            // User changed, update state
+            setUser(data.session.user);
+            await fetchProfile(data.session.user.id);
+          }
+        } catch (err) {
+          console.warn('[Auth] Error refreshing session:', err);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user, fetchProfile]);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
