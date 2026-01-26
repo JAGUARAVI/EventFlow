@@ -11,7 +11,7 @@ The problem we are trying to takle is the lack of a centralized management syste
 # Our Solution Approach
 We henceforth put forward our solution to the aforementioned problem statement, **EventFlow**. EventFlow is a powerful in-house event management toolkit. This toolkit can prove helpful to all the clubs/societies planning to host a competitive or non-competitive event alike, with powerful built-in features such as brackets, polling, leaderboards and much more.
 
-A live deployment of EventFlow can be visited [here!](https://6975facb837b29000868787d--eventflowiiit.netlify.app/)
+A live deployment of EventFlow can be visited [here!](https://eventflowiiit.netlify.app/)
 
 # Tech Stack Used
 - ReactJS + React Router (Framework)
@@ -32,7 +32,7 @@ A live deployment of EventFlow can be visited [here!](https://6975facb837b290008
 1) Clone the git repository
 
 ```bash
-git clone https://github.com/OSDG-IIITH/hackiiit-2026-u-2800.git
+git clone https://github.com/JAGUARAVI/EventFlow.git
 ```
 
 2) Install Node dependencies
