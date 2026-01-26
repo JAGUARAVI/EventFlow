@@ -80,6 +80,7 @@ import Leaderboard from "../components/Leaderboard";
 import AuditLog from "../components/AuditLog";
 import BracketView from "../components/BracketView";
 import MatchEditor from "../components/MatchEditor";
+import MatchTeamsEditor from "../components/MatchTeamsEditor";
 import PollEditor from "../components/PollEditor";
 import PollVote from "../components/PollVote";
 import PollResults from "../components/PollResults";
@@ -171,6 +172,15 @@ export default function EventPage() {
     onClose: onMatchClose,
   } = useDisclosure();
   const [selectedMatch, setSelectedMatch] = useState(null);
+  
+  // Match teams editor modal (for changing teams or creating new match)
+  const {
+    isOpen: isMatchTeamsOpen,
+    onOpen: onMatchTeamsOpen,
+    onClose: onMatchTeamsClose,
+  } = useDisclosure();
+  const [matchTeamsTarget, setMatchTeamsTarget] = useState(null); // match to edit or null for new
+  const [newMatchRound, setNewMatchRound] = useState(0);
 
   const [polls, setPolls] = useState([]);
   const [pollOptions, setPollOptions] = useState({});
@@ -701,6 +711,50 @@ export default function EventPage() {
   const handleEditMatch = (match) => {
     setSelectedMatch(match);
     onMatchOpen();
+  };
+
+  // Handler for adding a new match to a round
+  const handleAddMatch = (roundNum) => {
+    setMatchTeamsTarget(null);
+    setNewMatchRound(roundNum);
+    onMatchTeamsOpen();
+  };
+
+  // Handler for editing teams in a match
+  const handleEditTeams = (match) => {
+    setMatchTeamsTarget(match);
+    setNewMatchRound(match.round);
+    onMatchTeamsOpen();
+  };
+
+  // Handler for deleting a match
+  const handleDeleteMatch = async (match) => {
+    if (!confirm("Delete this match? This action cannot be undone.")) return;
+    
+    const teamA = teams.find((t) => t.id === match.team_a_id)?.name || "Team A";
+    const teamB = teams.find((t) => t.id === match.team_b_id)?.name || "Team B";
+    
+    const { error } = await supabase.from("matches").delete().eq("id", match.id);
+    if (error) {
+      addToast({
+        title: "Delete failed",
+        description: error.message,
+        severity: "danger",
+      });
+      return;
+    }
+    
+    await supabase.from("event_audit").insert({
+      event_id: id,
+      action: "match.delete",
+      entity_type: "match",
+      entity_id: match.id,
+      message: `Deleted match: ${teamA} vs ${teamB} (Round ${match.round})`,
+      created_by: user?.id,
+    });
+    
+    fetch();
+    addToast({ title: "Match deleted", severity: "success" });
   };
 
   const handleDeletePoll = async (pollId) => {
@@ -2221,6 +2275,9 @@ export default function EventPage() {
                               }
                               canEdit={canJudge}
                               onEditMatch={handleEditMatch}
+                              onAddMatch={handleAddMatch}
+                              onEditTeams={handleEditTeams}
+                              onDeleteMatch={handleDeleteMatch}
                             />
                           </div>
                         )}
@@ -2783,6 +2840,48 @@ export default function EventPage() {
             created_by: user?.id,
             metadata: { status: update.status },
           });
+        }}
+      />
+
+      <MatchTeamsEditor
+        isOpen={isMatchTeamsOpen}
+        onClose={onMatchTeamsClose}
+        match={matchTeamsTarget}
+        teams={teams}
+        eventId={id}
+        round={newMatchRound}
+        bracketType={bracketType}
+        isNewMatch={!matchTeamsTarget}
+        onUpdate={(matchOrId, update) => {
+          fetch();
+        }}
+        onAudit={async (matchOrAction, data) => {
+          if (matchOrAction === 'create_match') {
+            const teamA = teams.find((t) => t.id === data.match.team_a_id)?.name || "TBD";
+            const teamB = teams.find((t) => t.id === data.match.team_b_id)?.name || "TBD";
+            await supabase.from("event_audit").insert({
+              event_id: id,
+              action: "match.create",
+              entity_type: "match",
+              entity_id: data.match.id,
+              message: `Created match: ${teamA} vs ${teamB} (Round ${data.match.round})`,
+              created_by: user?.id,
+            });
+          } else {
+            // Edit teams
+            const oldTeamA = teams.find((t) => t.id === matchOrAction.team_a_id)?.name || "TBD";
+            const oldTeamB = teams.find((t) => t.id === matchOrAction.team_b_id)?.name || "TBD";
+            const newTeamA = teams.find((t) => t.id === data.team_a_id)?.name || "TBD";
+            const newTeamB = teams.find((t) => t.id === data.team_b_id)?.name || "TBD";
+            await supabase.from("event_audit").insert({
+              event_id: id,
+              action: "match.teams_update",
+              entity_type: "match",
+              entity_id: matchOrAction.id,
+              message: `Changed teams: ${oldTeamA} vs ${oldTeamB} → ${newTeamA} vs ${newTeamB}`,
+              created_by: user?.id,
+            });
+          }
         }}
       />
 

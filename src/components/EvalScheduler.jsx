@@ -267,6 +267,9 @@ export default function EvalScheduler({
       if (panel.status === 'paused') return 'paused';
       if (panel.status === 'delayed') return 'delayed';
       
+      // If no slots, show as scheduled
+      if (panelSlots.length === 0) return 'scheduled';
+      
       // Check if any slot has been started (live or completed)
       const hasStartedSlot = panelSlots.some(s => ['live', 'completed', 'no_show'].includes(s.status));
       if (hasStartedSlot) return 'active';
@@ -1140,7 +1143,7 @@ export default function EvalScheduler({
                                         </Button>
                                       </DropdownTrigger>
                                       <DropdownMenu>
-                                        {['scheduled', 'delayed'].includes(slot.status) && (
+                                        {['scheduled', 'delayed', 'rescheduled'].includes(slot.status) && (
                                           <DropdownItem
                                             key="start"
                                             startContent={<Play size={16} />}
