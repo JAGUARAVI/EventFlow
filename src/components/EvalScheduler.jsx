@@ -71,11 +71,13 @@ const SLOT_STATUS_CONFIG = {
   live: { color: 'success', icon: Play, label: 'Live' },
   completed: { color: 'primary', icon: CheckCircle2, label: 'Completed' },
   rescheduled: { color: 'warning', icon: RefreshCw, label: 'Rescheduled' },
+  delayed: { color: 'danger', icon: Clock, label: 'Delayed' },
   no_show: { color: 'danger', icon: XCircle, label: 'Did Not Show' },
   cancelled: { color: 'default', icon: XCircle, label: 'Cancelled' },
 };
 
 const PANEL_STATUS_CONFIG = {
+  scheduled: { color: 'default', label: 'Scheduled' },
   active: { color: 'success', label: 'Active' },
   paused: { color: 'warning', label: 'Paused' },
   delayed: { color: 'danger', label: 'Delayed' },
@@ -121,6 +123,10 @@ export default function EvalScheduler({
   const [cascadeNewDate, setCascadeNewDate] = useState('');
   const [cascadeNewTime, setCascadeNewTime] = useState('');
   const [cascadeApplyToAll, setCascadeApplyToAll] = useState(true);
+  const [cascadeMarkDelayed, setCascadeMarkDelayed] = useState(false);
+  
+  // Delay from slot state
+  const [delayFromSlot, setDelayFromSlot] = useState(null);
 
   // Modals
   const {
@@ -180,7 +186,7 @@ export default function EvalScheduler({
           .order('created_at'),
         supabase
           .from('eval_slots')
-          .select('*, eval_panels!inner(event_id)')
+          .select('*, eval_panels!eval_slots_panel_id_fkey!inner(event_id)')
           .eq('eval_panels.event_id', eventId)
           .order('scheduled_at'),
       ]);
@@ -242,10 +248,42 @@ export default function EvalScheduler({
       if (slot.status === 'no_show') return 'no_show';
       if (slot.status === 'cancelled') return 'cancelled';
       if (slot.status === 'rescheduled') return 'rescheduled';
+      if (slot.status === 'delayed') return 'delayed';
       // For scheduled slots, check panel status
       if (panel?.status === 'paused') return 'paused';
       if (panel?.status === 'delayed') return 'delayed';
       return 'scheduled';
+    },
+    []
+  );
+
+  /**
+   * Get effective panel status (considering time and slot statuses)
+   */
+  const getEffectivePanelStatus = useCallback(
+    (panel, panelSlots) => {
+      // If panel is explicitly completed, paused, or delayed, use that
+      if (panel.status === 'completed') return 'completed';
+      if (panel.status === 'paused') return 'paused';
+      if (panel.status === 'delayed') return 'delayed';
+      
+      // Check if any slot has been started (live or completed)
+      const hasStartedSlot = panelSlots.some(s => ['live', 'completed', 'no_show'].includes(s.status));
+      if (hasStartedSlot) return 'active';
+      
+      // Check if current time is before the first scheduled slot
+      const scheduledSlots = panelSlots
+        .filter(s => ['scheduled', 'rescheduled', 'delayed'].includes(s.status))
+        .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+      
+      if (scheduledSlots.length > 0) {
+        const firstSlotTime = new Date(scheduledSlots[0].scheduled_at);
+        if (new Date() < firstSlotTime) {
+          return 'scheduled';
+        }
+      }
+      
+      return panel.status || 'active';
     },
     []
   );
@@ -286,11 +324,12 @@ export default function EvalScheduler({
   /**
    * Panel status actions
    */
-  const setPanelStatus = async (panel, status, delayMins = null, reason = null) => {
+  const setPanelStatus = async (panel, status, delayMins = null, reason = null, fromSlotId = null) => {
     const updateData = {
       status,
       delay_minutes: status === 'delayed' ? delayMins : 0,
       delay_reason: status === 'delayed' ? reason : null,
+      delay_from_slot_id: status === 'delayed' ? fromSlotId : null,
       paused_at: status === 'paused' ? new Date().toISOString() : null,
     };
     const { error } = await supabase
@@ -301,14 +340,16 @@ export default function EvalScheduler({
       addToast({ title: 'Status update failed', description: error.message, severity: 'danger' });
       return;
     }
+    const fromSlot = fromSlotId ? slots.find(s => s.id === fromSlotId) : null;
+    const fromTeam = fromSlot ? teams.find(t => t.id === fromSlot.team_id) : null;
     await supabase.from('event_audit').insert({
       event_id: eventId,
       action: `eval_panel.${status}`,
       entity_type: 'eval_panel',
       entity_id: panel.id,
-      message: `Set panel "${panel.name}" to ${status}${delayMins ? ` (${delayMins} min)` : ''}`,
+      message: `Set panel "${panel.name}" to ${status}${delayMins ? ` (${delayMins} min)` : ''}${fromTeam ? ` starting from ${fromTeam.name}` : ''}`,
       created_by: currentUserId,
-      metadata: { status, delay_minutes: delayMins, reason },
+      metadata: { status, delay_minutes: delayMins, reason, delay_from_slot_id: fromSlotId },
     });
     addToast({ title: `Panel ${status}`, severity: 'success' });
     fetchData();
@@ -318,15 +359,17 @@ export default function EvalScheduler({
     setDelayPanel(panel);
     setDelayMinutes(String(panel.delay_minutes || 15));
     setDelayReason(panel.delay_reason || '');
+    setDelayFromSlot(panel.delay_from_slot_id || null);
     onDelayOpen();
   };
 
   const handleSetDelay = async () => {
     if (!delayPanel) return;
     const mins = parseInt(delayMinutes, 10) || 0;
-    await setPanelStatus(delayPanel, 'delayed', mins, delayReason);
+    await setPanelStatus(delayPanel, 'delayed', mins, delayReason, delayFromSlot);
     onDelayClose();
     setDelayPanel(null);
+    setDelayFromSlot(null);
   };
 
   /**
@@ -398,12 +441,40 @@ export default function EvalScheduler({
   /**
    * Get adjusted time for a slot considering panel delay
    */
-  const getAdjustedTime = useCallback((slot, panel) => {
+  const getAdjustedTime = useCallback((slot, panel, allSlots) => {
     const originalTime = new Date(slot.scheduled_at);
     if (panel?.status === 'delayed' && panel.delay_minutes > 0 && slot.status === 'scheduled') {
+      // Check if delay has a starting slot
+      if (panel.delay_from_slot_id && allSlots) {
+        const fromSlot = allSlots.find(s => s.id === panel.delay_from_slot_id);
+        if (fromSlot) {
+          const fromTime = new Date(fromSlot.scheduled_at);
+          // Only apply delay if this slot is at or after the delay start slot
+          if (originalTime >= fromTime) {
+            return new Date(originalTime.getTime() + panel.delay_minutes * 60000);
+          }
+          return originalTime;
+        }
+      }
       return new Date(originalTime.getTime() + panel.delay_minutes * 60000);
     }
     return originalTime;
+  }, []);
+
+  /**
+   * Check if a slot is affected by panel delay
+   */
+  const isSlotDelayed = useCallback((slot, panel, allSlots) => {
+    if (panel?.status !== 'delayed' || slot.status !== 'scheduled') return false;
+    if (panel.delay_from_slot_id && allSlots) {
+      const fromSlot = allSlots.find(s => s.id === panel.delay_from_slot_id);
+      if (fromSlot) {
+        const slotTime = new Date(slot.scheduled_at);
+        const fromTime = new Date(fromSlot.scheduled_at);
+        return slotTime >= fromTime;
+      }
+    }
+    return true;
   }, []);
 
   /**
@@ -501,6 +572,7 @@ export default function EvalScheduler({
     setCascadeNewDate(dt.toISOString().split('T')[0]);
     setCascadeNewTime(dt.toTimeString().slice(0, 5));
     setCascadeApplyToAll(true);
+    setCascadeMarkDelayed(false);
     onCascadeOpen();
   };
 
@@ -512,7 +584,7 @@ export default function EvalScheduler({
     const newTime = new Date(`${cascadeNewDate}T${cascadeNewTime}`);
     const timeDelta = newTime.getTime() - oldTime.getTime();
     
-    if (timeDelta === 0) {
+    if (timeDelta === 0 && !cascadeMarkDelayed) {
       onCascadeClose();
       return;
     }
@@ -532,9 +604,14 @@ export default function EvalScheduler({
           const originalTime = new Date(s.scheduled_at);
           const adjustedTime = new Date(originalTime.getTime() + timeDelta);
           
+          const updateData = { scheduled_at: adjustedTime.toISOString() };
+          if (cascadeMarkDelayed && ['scheduled', 'rescheduled', 'delayed'].includes(s.status)) {
+            updateData.status = 'delayed';
+          }
+          
           await supabase
             .from('eval_slots')
-            .update({ scheduled_at: adjustedTime.toISOString() })
+            .update(updateData)
             .eq('id', s.id);
         }
         
@@ -543,17 +620,22 @@ export default function EvalScheduler({
           action: 'eval_slots.cascade_edit',
           entity_type: 'eval_panel',
           entity_id: panel.id,
-          message: `Cascade edited ${slotsToUpdate.length} slots in panel "${panel.name}"`,
+          message: `Cascade edited ${slotsToUpdate.length} slots in panel "${panel.name}"${cascadeMarkDelayed ? ' (marked as delayed)' : ''}`,
           created_by: currentUserId,
-          metadata: { time_delta_minutes: timeDelta / 60000, slots_affected: slotsToUpdate.length },
+          metadata: { time_delta_minutes: timeDelta / 60000, slots_affected: slotsToUpdate.length, marked_delayed: cascadeMarkDelayed },
         });
         
         addToast({ title: `Updated ${slotsToUpdate.length} slots`, severity: 'success' });
       } else {
         // Update only this slot
+        const updateData = { scheduled_at: newTime.toISOString() };
+        if (cascadeMarkDelayed && ['scheduled', 'rescheduled', 'delayed'].includes(slot.status)) {
+          updateData.status = 'delayed';
+        }
+        
         await supabase
           .from('eval_slots')
-          .update({ scheduled_at: newTime.toISOString() })
+          .update(updateData)
           .eq('id', slot.id);
         
         addToast({ title: 'Slot updated', severity: 'success' });
@@ -824,7 +906,8 @@ export default function EvalScheduler({
           {panels.map((panel) => {
             const panelSlots = getSlotsForPanel(panel.id);
             const judges = panelJudges[panel.id] || [];
-            const statusConfig = PANEL_STATUS_CONFIG[panel.status] || PANEL_STATUS_CONFIG.active;
+            const effectivePanelStatus = getEffectivePanelStatus(panel, panelSlots);
+            const statusConfig = PANEL_STATUS_CONFIG[effectivePanelStatus] || PANEL_STATUS_CONFIG.active;
             const isPanelManager = canManagePanel(panel);
             const isPanelJudge = canJudgePanel(panel);
 
@@ -984,7 +1067,7 @@ export default function EvalScheduler({
                         <TableColumn>TIME</TableColumn>
                         <TableColumn>DURATION</TableColumn>
                         <TableColumn>STATUS</TableColumn>
-                        <TableColumn>ACTIONS</TableColumn>
+                        {isPanelJudge ? <TableColumn>ACTIONS</TableColumn> : <TableColumn className="w-0 p-0"> </TableColumn>}
                       </TableHeader>
                       <TableBody>
                         {panelSlots
@@ -993,12 +1076,12 @@ export default function EvalScheduler({
                             const team = teams.find((t) => t.id === slot.team_id);
                             const effectiveStatus = getEffectiveSlotStatus(slot, panel);
                             const originalTime = new Date(slot.scheduled_at);
-                            const adjustedTime = getAdjustedTime(slot, panel);
-                            const isDelayed = panel.status === 'delayed' && slot.status === 'scheduled';
+                            const adjustedTime = getAdjustedTime(slot, panel, panelSlots);
+                            const slotIsDelayed = isSlotDelayed(slot, panel, panelSlots);
                             const statusCfg =
                               effectiveStatus === 'paused'
                                 ? { color: 'warning', icon: Pause, label: 'Paused' }
-                                : effectiveStatus === 'delayed'
+                                : effectiveStatus === 'delayed' && slotIsDelayed
                                   ? { color: 'danger', icon: Clock, label: `Delayed ${panel.delay_minutes}m` }
                                   : SLOT_STATUS_CONFIG[slot.status] || SLOT_STATUS_CONFIG.scheduled;
                             const StatusIcon = statusCfg.icon;
@@ -1019,7 +1102,7 @@ export default function EvalScheduler({
                                   <div className="flex flex-col">
                                     <span>{adjustedTime.toLocaleDateString()}</span>
                                     <div className="flex items-center gap-1">
-                                      {isDelayed && (
+                                      {slotIsDelayed && (
                                         <span className="text-default-400 text-sm line-through">
                                           {originalTime.toLocaleTimeString([], {
                                             hour: '2-digit',
@@ -1027,8 +1110,8 @@ export default function EvalScheduler({
                                           })}
                                         </span>
                                       )}
-                                      <span className={`text-sm ${isDelayed ? 'text-danger font-medium' : 'text-default-500'}`}>
-                                        {isDelayed && '→ '}
+                                      <span className={`text-sm ${slotIsDelayed ? 'text-danger font-medium' : 'text-default-500'}`}>
+                                        {slotIsDelayed && '→ '}
                                         {adjustedTime.toLocaleTimeString([], {
                                           hour: '2-digit',
                                           minute: '2-digit',
@@ -1048,7 +1131,7 @@ export default function EvalScheduler({
                                     {statusCfg.label}
                                   </Chip>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className={isPanelJudge ? '' : 'w-0 p-0'}>
                                   {isPanelJudge && (
                                     <Dropdown>
                                       <DropdownTrigger>
@@ -1057,7 +1140,7 @@ export default function EvalScheduler({
                                         </Button>
                                       </DropdownTrigger>
                                       <DropdownMenu>
-                                        {slot.status === 'scheduled' && (
+                                        {['scheduled', 'delayed'].includes(slot.status) && (
                                           <DropdownItem
                                             key="start"
                                             startContent={<Play size={16} />}
@@ -1075,7 +1158,7 @@ export default function EvalScheduler({
                                             Mark Complete
                                           </DropdownItem>
                                         )}
-                                        {['scheduled', 'rescheduled'].includes(slot.status) && (
+                                        {['scheduled', 'rescheduled', 'delayed'].includes(slot.status) && (
                                           <>
                                             <DropdownItem
                                               key="reschedule"
@@ -1101,7 +1184,7 @@ export default function EvalScheduler({
                                         >
                                           Edit
                                         </DropdownItem>
-                                        {['scheduled', 'rescheduled'].includes(slot.status) && (
+                                        {['scheduled', 'rescheduled', 'delayed'].includes(slot.status) && (
                                           <DropdownItem
                                             key="cascade"
                                             startContent={<ChevronsRight size={16} />}
@@ -1172,7 +1255,7 @@ export default function EvalScheduler({
       />
 
       {/* Delay Modal */}
-      <Modal isOpen={isDelayOpen} onClose={onDelayClose} size="sm">
+      <Modal isOpen={isDelayOpen} onClose={onDelayClose} size="md">
         <ModalContent>
           <ModalHeader>Set Panel Delay</ModalHeader>
           <ModalBody className="space-y-4">
@@ -1193,6 +1276,61 @@ export default function EvalScheduler({
               value={delayReason}
               onValueChange={setDelayReason}
             />
+            
+            {/* Delay from specific slot */}
+            <div>
+              <h4 className="text-sm font-semibold mb-2">Apply delay starting from</h4>
+              <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
+                <div
+                  className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                    delayFromSlot === null ? 'bg-primary-100' : 'hover:bg-default-100'
+                  }`}
+                  onClick={() => setDelayFromSlot(null)}
+                >
+                  <input
+                    type="radio"
+                    checked={delayFromSlot === null}
+                    onChange={() => setDelayFromSlot(null)}
+                    className="pointer-events-none"
+                  />
+                  <span className="font-medium">All slots (entire panel)</span>
+                </div>
+                {delayPanel && getSlotsForPanel(delayPanel.id)
+                  .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
+                  .filter(slot => ['scheduled', 'rescheduled'].includes(slot.status))
+                  .map((slot) => {
+                    const team = teams.find((t) => t.id === slot.team_id);
+                    return (
+                      <div
+                        key={slot.id}
+                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                          delayFromSlot === slot.id ? 'bg-primary-100' : 'hover:bg-default-100'
+                        }`}
+                        onClick={() => setDelayFromSlot(slot.id)}
+                      >
+                        <input
+                          type="radio"
+                          checked={delayFromSlot === slot.id}
+                          onChange={() => setDelayFromSlot(slot.id)}
+                          className="pointer-events-none"
+                        />
+                        <div className="flex-1">
+                          <span className="font-medium">{team?.name || 'Unknown'}</span>
+                          <span className="text-default-400 text-sm ml-2">
+                            {new Date(slot.scheduled_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+              <p className="text-xs text-default-400 mt-1">
+                Slots before the selected team will not be affected by the delay.
+              </p>
+            </div>
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={onDelayClose}>
@@ -1526,6 +1664,27 @@ export default function EvalScheduler({
                     <p className="font-medium">Apply to subsequent slots</p>
                     <p className="text-sm text-default-500">
                       All slots after this one will be shifted by the same time difference
+                    </p>
+                  </div>
+                </div>
+
+                {/* Mark as Delayed Option */}
+                <div
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer border-2 transition-colors ${
+                    cascadeMarkDelayed ? 'border-danger bg-danger-50' : 'border-default-200'
+                  }`}
+                  onClick={() => setCascadeMarkDelayed(!cascadeMarkDelayed)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={cascadeMarkDelayed}
+                    onChange={(e) => setCascadeMarkDelayed(e.target.checked)}
+                    className="pointer-events-none"
+                  />
+                  <div>
+                    <p className="font-medium">Mark as Delayed</p>
+                    <p className="text-sm text-default-500">
+                      {cascadeApplyToAll ? 'All affected slots' : 'This slot'} will be marked with "Delayed" status
                     </p>
                   </div>
                 </div>
