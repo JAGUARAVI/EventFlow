@@ -300,6 +300,25 @@ export default function EventPage() {
     return idx === -1 ? 999 : idx;
   }, [tabOrder]);
 
+  // Get first visible tab based on order and visibility
+  const firstVisibleTab = useMemo(() => {
+    const tabVisibility = {
+      details: true,
+      announcements: true,
+      teams: showTeams,
+      bracket: hasType("bracket"),
+      leaderboard: hasType("points"),
+      judges: showJudges,
+      polls: hasType("poll"),
+      evals: hasType("evals"),
+      timeline: showTimeline,
+      analytics: showAnalytics,
+      audit: canManage,
+    };
+    const sorted = [...tabOrder].filter(key => tabVisibility[key]);
+    return sorted[0] || 'details';
+  }, [tabOrder, showTeams, showJudges, showTimeline, showAnalytics, canManage, hasType]);
+
   const myTeamIds = useMemo(() => {
     if (!user?.id) return new Set();
     return new Set(teams.filter((t) => t.created_by === user.id).map((t) => t.id));
@@ -1801,7 +1820,7 @@ export default function EventPage() {
                 tabContent:
                   "group-data-[selected=true]:text-primary font-medium",
               }}
-              selectedKey={searchParams.get("tab") || "details"}
+              selectedKey={searchParams.get("tab") || firstVisibleTab}
               onSelectionChange={(key) => setSearchParams({ tab: key })}
             >
               {[
