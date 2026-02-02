@@ -16,7 +16,7 @@ import {
   Tabs,
   Tab,
 } from '@heroui/react';
-import { Search, UserPlus, Shield, Settings, Users } from 'lucide-react';
+import { Search, UserPlus, Shield, Settings, Users, GripVertical, LayoutList } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
@@ -26,6 +26,34 @@ const EVENT_TYPES = [
   { value: 'poll', label: 'Poll' },
   { value: 'evals', label: 'Evaluations' },
 ];
+
+const DEFAULT_TAB_KEYS = [
+  'details',
+  'announcements',
+  'teams',
+  'bracket',
+  'leaderboard',
+  'judges',
+  'polls',
+  'evals',
+  'timeline',
+  'analytics',
+  'audit',
+];
+
+const TAB_LABELS = {
+  details: 'Details',
+  announcements: 'Announcements',
+  teams: 'Teams',
+  bracket: 'Bracket',
+  leaderboard: 'Leaderboard',
+  judges: 'Judges',
+  polls: 'Polls',
+  evals: 'Evaluations',
+  timeline: 'Timeline',
+  analytics: 'Analytics',
+  audit: 'Audit Log',
+};
 
 const VISIBILITY = [
   { value: 'public', label: 'Public' },
@@ -45,7 +73,11 @@ export default function EventForm() {
   const [bannerUrl, setBannerUrl] = useState('');
   const [hideAnalytics, setHideAnalytics] = useState(false);
   const [hideTimeline, setHideTimeline] = useState(false);
+  const [hideTeams, setHideTeams] = useState(false);
   const [hideJudges, setHideJudges] = useState(false);
+  const [tabOrder, setTabOrder] = useState(DEFAULT_TAB_KEYS);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [draggingIndex, setDraggingIndex] = useState(null);
   const [leaderboardSortOrder, setLeaderboardSortOrder] = useState('desc');
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(isEdit);
@@ -119,6 +151,8 @@ export default function EventForm() {
       setHideTimeline(settings.hide_timeline || false);
       setHideJudges(settings.hide_judges || false);
       setLeaderboardSortOrder(settings.leaderboard_sort_order || 'desc');
+      setHideTeams(settings.hide_teams || false);
+      setTabOrder(settings.tab_order && Array.isArray(settings.tab_order) && settings.tab_order.length > 0 ? settings.tab_order : DEFAULT_TAB_KEYS);
       
       // Fetch co-managers
       const { data: managersData } = await supabase
@@ -265,6 +299,8 @@ export default function EventForm() {
         hide_analytics: hideAnalytics,
         hide_timeline: hideTimeline,
         hide_judges: hideJudges,
+        hide_teams: hideTeams,
+        tab_order: tabOrder,
         leaderboard_sort_order: leaderboardSortOrder,
       },
       updated_at: new Date().toISOString(),
@@ -364,6 +400,9 @@ export default function EventForm() {
                     </Checkbox>
                     <Checkbox isSelected={hideJudges} onValueChange={setHideJudges}>
                       Hide Judges tab from viewers
+                    </Checkbox>
+                    <Checkbox isSelected={hideTeams} onValueChange={setHideTeams}>
+                      Hide Teams tab from viewers
                     </Checkbox>
                   </CardBody>
                 </Card>
@@ -490,6 +529,73 @@ export default function EventForm() {
                         No co-organizers added yet
                       </p>
                     )}
+                  </CardBody>
+                </Card>
+              </div>
+            </Tab>
+            
+            <Tab
+              key="tabs"
+              title={
+                <div className="flex items-center gap-2">
+                  <LayoutList size={16} />
+                  <span>Tab Order</span>
+                </div>
+              }
+            >
+              <div className="flex flex-col gap-4">
+                <Card className="border border-default-200">
+                  <CardBody className="gap-4">
+                    <div>
+                      <p className="text-sm font-medium">Reorder Tabs</p>
+                      <p className="text-xs text-default-500 mb-3">Drag to reorder how tabs appear in the event page</p>
+                    </div>
+                    <div className="border rounded-lg overflow-hidden">
+                      {tabOrder.map((key, i) => (
+                        <div
+                          key={key}
+                          draggable
+                          onDragStart={(e) => {
+                            setDraggingIndex(i);
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', String(i));
+                          }}
+                          onDragEnd={() => {
+                            setDraggingIndex(null);
+                            setDragOverIndex(null);
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            if (dragOverIndex !== i) setDragOverIndex(i);
+                          }}
+                          onDragLeave={() => setDragOverIndex(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const from = Number(e.dataTransfer.getData('text/plain'));
+                            const to = i;
+                            setDragOverIndex(null);
+                            setDraggingIndex(null);
+                            if (isNaN(from) || from === to) return;
+                            const next = [...tabOrder];
+                            const [item] = next.splice(from, 1);
+                            next.splice(to, 0, item);
+                            setTabOrder(next);
+                          }}
+                          className={`
+                            flex items-center gap-3 p-3 border-b last:border-b-0 transition-all
+                            ${draggingIndex === i ? 'opacity-50 bg-default-100' : ''}
+                            ${dragOverIndex === i && draggingIndex !== i ? 'bg-primary-50 border-t-2 border-t-primary' : ''}
+                            ${draggingIndex === null ? 'hover:bg-default-50' : ''}
+                            cursor-grab active:cursor-grabbing
+                          `}
+                        >
+                          <GripVertical size={16} className="text-default-400 flex-shrink-0" />
+                          <span className="flex-1 font-medium">{TAB_LABELS[key] || key}</span>
+                          <Chip size="sm" variant="flat" className="text-xs">{key}</Chip>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-default-400">Note: Some tabs may be hidden based on event type or visibility settings</p>
                   </CardBody>
                 </Card>
               </div>

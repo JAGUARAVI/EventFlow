@@ -933,7 +933,7 @@ export default function EvalScheduler({
                         {panel.location}
                       </span>
                     )}
-                    <span className="text-default-400 text-sm">
+                    <span className="text-default-400 text-sm hidden sm:inline">
                       {panelSlots.length} evaluation{panelSlots.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -1064,18 +1064,19 @@ export default function EvalScheduler({
                       <p>No evaluations scheduled yet.</p>
                     </div>
                   ) : (
-                    <Table aria-label="Evaluation slots" removeWrapper>
-                      <TableHeader>
-                        <TableColumn>TEAM</TableColumn>
-                        <TableColumn>TIME</TableColumn>
-                        <TableColumn>DURATION</TableColumn>
-                        <TableColumn>STATUS</TableColumn>
-                        {isPanelJudge ? <TableColumn>ACTIONS</TableColumn> : <TableColumn className="w-0 p-0"> </TableColumn>}
-                      </TableHeader>
-                      <TableBody>
-                        {panelSlots
-                          .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
-                          .map((slot) => {
+                    <div className="w-full overflow-x-auto pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
+                      <Table aria-label="Evaluation slots" removeWrapper classNames={{ wrapper: "min-w-[600px]" }}>
+                          <TableHeader>
+                            <TableColumn>TEAM</TableColumn>
+                            <TableColumn>TIME</TableColumn>
+                            <TableColumn>DURATION</TableColumn>
+                            <TableColumn>STATUS</TableColumn>
+                            {isPanelJudge ? <TableColumn>ACTIONS</TableColumn> : <TableColumn className="w-0 p-0"> </TableColumn>}
+                          </TableHeader>
+                          <TableBody>
+                            {panelSlots
+                              .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
+                              .map((slot) => {
                             const team = teams.find((t) => t.id === slot.team_id);
                             const effectiveStatus = getEffectiveSlotStatus(slot, panel);
                             const originalTime = new Date(slot.scheduled_at);
@@ -1213,8 +1214,9 @@ export default function EvalScheduler({
                               </TableRow>
                             );
                           })}
-                      </TableBody>
-                    </Table>
+                          </TableBody>
+                        </Table>
+                    </div>
                   )}
                 </div>
               </AccordionItem>

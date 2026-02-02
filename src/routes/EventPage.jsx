@@ -288,6 +288,17 @@ export default function EventPage() {
   const showAnalytics = canManage || !settings.hide_analytics;
   const showTimeline = canManage || !settings.hide_timeline;
   const showJudges = canManage || !settings.hide_judges;
+  const showTeams = canManage || !settings.hide_teams;
+
+  // Tab ordering from settings
+  const defaultTabOrder = ['details', 'announcements', 'teams', 'bracket', 'leaderboard', 'judges', 'polls', 'evals', 'timeline', 'analytics', 'audit'];
+  const tabOrder = settings.tab_order && Array.isArray(settings.tab_order) ? settings.tab_order : defaultTabOrder;
+  
+  // Helper to get sort index for a tab key
+  const getTabSortIndex = useCallback((key) => {
+    const idx = tabOrder.indexOf(key);
+    return idx === -1 ? 999 : idx;
+  }, [tabOrder]);
 
   const myTeamIds = useMemo(() => {
     if (!user?.id) return new Set();
@@ -1793,6 +1804,8 @@ export default function EventPage() {
               selectedKey={searchParams.get("tab") || "details"}
               onSelectionChange={(key) => setSearchParams({ tab: key })}
             >
+              {[
+                { key: 'details', visible: true, element: (
               <Tab key="details" title="Details" className="p-3 md:p-6">
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1933,6 +1946,8 @@ export default function EventPage() {
                   </div>
                 </div>
               </Tab>
+                )},
+                { key: 'announcements', visible: true, element: (
               <Tab key="announcements" title="Announcements" className="p-3 md:p-6">
                 <AnnouncementsFeed
                   eventId={id}
@@ -1940,6 +1955,8 @@ export default function EventPage() {
                   canManage={canManage}
                 />
               </Tab>
+                )},
+                { key: 'teams', visible: showTeams, element: (
               <Tab key="teams" title="Teams" className="p-3 md:p-6">
                 <div className="space-y-6">
                   <div className="flex flex-col sm:flex-row justify-between gap-4 items-center">
@@ -2145,7 +2162,8 @@ export default function EventPage() {
                   )}
                 </div>
               </Tab>
-              {hasType("bracket") && (
+                )},
+                { key: 'bracket', visible: hasType("bracket"), element: (
                 <Tab
                     key="bracket"
                     title="Bracket"
@@ -2285,9 +2303,9 @@ export default function EventPage() {
                     </Card>
                   </div>
                 </Tab>
-              )}
+                )},
 
-              {hasType("points") && (
+                { key: 'leaderboard', visible: hasType("points"), element: (
                 <Tab key="leaderboard" title="Leaderboard" className="p-3 md:p-6">
                   <div className="flex justify-end mb-4 gap-2">
                     {canJudge && (
@@ -2318,9 +2336,9 @@ export default function EventPage() {
                     sortOrder={event?.settings?.leaderboard_sort_order || 'desc'}
                   />
                 </Tab>
-              )}
+                )},
 
-              {showJudges && (
+                { key: 'judges', visible: showJudges, element: (
                 <Tab key="judges" title="Judges" className="p-3 md:p-6">
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
@@ -2351,9 +2369,9 @@ export default function EventPage() {
                     </div>
                   </div>
                 </Tab>
-              )}
+                )},
 
-              {hasType("poll") && (
+                { key: 'polls', visible: hasType("poll"), element: (
                 <Tab key="polls" title="Polls" className="p-3 md:p-6">
                   <div className="space-y-6">
                     <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -2674,9 +2692,9 @@ export default function EventPage() {
                     )}
                   </div>
                 </Tab>
-              )}
+                )},
 
-              {hasType("evals") && (
+                { key: 'evals', visible: hasType("evals"), element: (
                 <Tab key="evals" title="Evaluations" className="p-3 md:p-6">
                   <EvalScheduler
                     eventId={id}
@@ -2686,9 +2704,9 @@ export default function EventPage() {
                     currentUserId={user?.id}
                   />
                 </Tab>
-              )}
+                )},
 
-              {showTimeline && (
+                { key: 'timeline', visible: showTimeline, element: (
                 <Tab key="timeline" title="Timeline" className="p-6">
                   <TimelineView
                     eventId={id}
@@ -2697,9 +2715,9 @@ export default function EventPage() {
                     scoreHistory={scoreHistory}
                   />
                 </Tab>
-              )}
+                )},
 
-              {showAnalytics && (
+                { key: 'analytics', visible: showAnalytics, element: (
                 <Tab key="analytics" title="Analytics" className="p-6">
                   <EventAnalytics
                     eventId={id}
@@ -2709,9 +2727,9 @@ export default function EventPage() {
                     teams={teams}
                   />
                 </Tab>
-              )}
+                )},
 
-              {canManage && (
+                { key: 'audit', visible: canManage, element: (
                 <Tab key="audit" title="Audit Log" className="p-6">
                   <div className="flex justify-end mb-4">
                     <Button
@@ -2733,7 +2751,12 @@ export default function EventPage() {
                     />
                   </div>
                 </Tab>
-              )}
+                )},
+              ]
+                .filter(tab => tab.visible)
+                .sort((a, b) => getTabSortIndex(a.key) - getTabSortIndex(b.key))
+                .map(tab => tab.element)
+              }
             </Tabs>
           </CardBody>
         </Card>
