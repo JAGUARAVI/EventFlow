@@ -23,7 +23,7 @@ export default function Login() {
     const [loading, setLoading] = useState(false);
     const {
         signInWithEmailOtp,
-        signInWithPhoneOtp,
+        // signInWithPhoneOtp,
         signInWithEmailPassword,
         signUpWithEmailPassword,
     } = useAuth();
@@ -354,7 +354,7 @@ export default function Login() {
                             )}
                         </Tab>
 
-                        <Tab key="phone" title="Phone">
+                        {/*<Tab key="phone" title="Phone">
                             {phoneSent ? (
                                 <div className="text-center py-8">
                                     <p className="text-success mb-2 font-medium">
@@ -403,7 +403,7 @@ export default function Login() {
                                     </Button>
                                 </form>
                             )}
-                        </Tab>
+                        </Tab>*/}
                     </Tabs>
                     )}
                 </CardBody>

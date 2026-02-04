@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import Navbar from "./Navbar";
 import RadiantPatches from "./RadiantPatches";
 import PWAInstallPrompt from "../PWAInstallPrompt";
+import { Link } from "@heroui/react";
 
 export default function AppLayout() {
   return (
@@ -12,6 +13,9 @@ export default function AppLayout() {
       <main className="flex-1 w-full relative z-10">
         <Outlet />
       </main>
+      <footer className="w-full py-4 text-center text-sm text-default-500 relative z-10">
+        Made with ☕ by <Link isExternal showAnchorIcon href="https://github.com/JAGUARAVI/EventFlow">Team U+2800</Link> during HackIIIT
+      </footer>
       <PWAInstallPrompt />
     </div>
   );

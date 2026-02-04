@@ -98,7 +98,7 @@ export function AuthProvider({ children }) {
 
   const signInWithEmailOtp = useCallback(async (email) => {
     const { error } = await supabase.auth.signInWithOtp({ email, options: {
-      emailRedirectTo: `${window.location.origin}/login`,
+      emailRedirectTo: `${window.location.origin}/dashboard`,
     } });
     return { error };
   }, []);

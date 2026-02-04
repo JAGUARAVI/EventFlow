@@ -6,6 +6,7 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
   const [question, setQuestion] = useState('');
   const [pollType, setPollType] = useState('simple');
   const [resultsHidden, setResultsHidden] = useState(false);
+  const [restrictedTo, setRestrictedTo] = useState('everyone');
   const [options, setOptions] = useState([]);
   const [newOptionLabel, setNewOptionLabel] = useState('');
   const [saving, setSaving] = useState(false);
@@ -15,11 +16,13 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
       setQuestion(poll.question || '');
       setPollType(poll.poll_type || 'simple');
       setResultsHidden(poll.results_hidden || false);
+      setRestrictedTo(poll.restricted_to || 'everyone');
       fetchOptions();
     } else if (!poll && isOpen) {
       setQuestion('');
       setPollType('simple');
       setResultsHidden(false);
+      setRestrictedTo('everyone');
       setOptions([]);
     }
   }, [poll, isOpen]);
@@ -67,7 +70,12 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
       if (poll?.id) {
         // Update existing poll
         const { error: pollErr } = await withRetry(() => 
-          supabase.from('polls').update({ question, poll_type: pollType, results_hidden: resultsHidden }).eq('id', poll.id)
+          supabase.from('polls').update({ 
+            question, 
+            poll_type: pollType, 
+            results_hidden: resultsHidden,
+            restricted_to: restrictedTo === 'everyone' ? null : restrictedTo
+          }).eq('id', poll.id)
         );
         if (pollErr) throw pollErr;
         
@@ -108,7 +116,13 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
         const { data: newPoll, error: pollErr } = await withRetry(() =>
           supabase
             .from('polls')
-            .insert({ event_id: eventId, question, poll_type: pollType, results_hidden: resultsHidden })
+            .insert({ 
+              event_id: eventId, 
+              question, 
+              poll_type: pollType, 
+              results_hidden: resultsHidden,
+              restricted_to: restrictedTo === 'everyone' ? null : restrictedTo
+            })
             .select()
             .single()
         );
@@ -172,6 +186,16 @@ export default function PollEditor({ isOpen, onClose, poll, eventId, teams, onUp
           <Switch isSelected={resultsHidden} onValueChange={setResultsHidden}>
             Hide live results from viewers
           </Switch>
+
+          <Select
+            label="Who can vote"
+            selectedKeys={[restrictedTo]}
+            onSelectionChange={(keys) => setRestrictedTo([...keys][0] || 'everyone')}
+          >
+            <SelectItem key="everyone">Everyone</SelectItem>
+            <SelectItem key="judges">Judges only</SelectItem>
+            <SelectItem key="managers">Managers only</SelectItem>
+          </Select>
 
           <div className="space-y-4">
             <label className="text-sm font-semibold">Options</label>

@@ -2677,6 +2677,8 @@ export default function EventPage() {
                                         poll={poll}
                                         options={pollOptions[poll.id] || []}
                                         showQuestion={false}
+                                        canJudge={canJudge}
+                                        canManage={canManage}
                                       />
                                     )}
                                     {poll.status !== "open" && (

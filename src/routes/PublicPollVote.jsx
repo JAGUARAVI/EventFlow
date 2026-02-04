@@ -15,6 +15,8 @@ export default function PublicPollVote() {
   const [pollOptions, setPollOptions] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedPollId, setSelectedPollId] = useState('');
+  const [canJudge, setCanJudge] = useState(false);
+  const [canManage, setCanManage] = useState(false);
 
   const selectedPoll = polls.find((p) => p.id === selectedPollId);
   const liveVotes = useLiveVotes(selectedPollId);
@@ -26,7 +28,7 @@ export default function PublicPollVote() {
   const fetchData = async () => {
     setLoading(true);
     const [eRes, pRes] = await Promise.all([
-      supabase.from('events').select('id, name').eq('id', eventId).single(),
+      supabase.from('events').select('id, name, created_by').eq('id', eventId).single(),
       supabase.from('polls').select('*').eq('event_id', eventId).eq('status', 'open'),
     ]);
     setLoading(false);
@@ -38,6 +40,22 @@ export default function PublicPollVote() {
 
     setEvent(eRes.data);
     setPolls(pRes.data || []);
+
+    // Check if user is a judge or manager
+    if (user?.id) {
+      const { data: judges } = await supabase
+        .from('event_judges')
+        .select('user_id, can_manage')
+        .eq('event_id', eventId);
+      
+      const isCreator = eRes.data.created_by === user.id;
+      const judgeRecord = judges?.find(j => j.user_id === user.id);
+      const isJudge = !!judgeRecord;
+      const isCoManager = judgeRecord?.can_manage || false;
+      
+      setCanManage(isCreator || isCoManager);
+      setCanJudge(isCreator || isCoManager || isJudge);
+    }
 
     // Fetch options for each poll
     if (pRes.data && pRes.data.length > 0) {
@@ -114,6 +132,8 @@ export default function PublicPollVote() {
                 poll={selectedPoll}
                 options={pollOptions[selectedPollId] || []}
                 onVoted={() => fetchData()}
+                canJudge={canJudge}
+                canManage={canManage}
               />
             </CardBody>
           </Card>

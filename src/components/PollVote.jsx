@@ -5,7 +5,7 @@ import { X, Plus, GripVertical, Maximize2 } from 'lucide-react';
 import { supabase, withRetry } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
-export default function PollVote({ poll, options, onVoted, showQuestion = true }) {
+export default function PollVote({ poll, options, onVoted, showQuestion = true, canJudge = false, canManage = false }) {
   const { user } = useAuth();
   const [selectedOptionId, setSelectedOptionId] = useState('');
   const [rankedOrdered, setRankedOrdered] = useState([]); // For ranked: list of option objects
@@ -165,6 +165,21 @@ export default function PollVote({ poll, options, onVoted, showQuestion = true }
 
   if (poll?.status === 'closed') {
     return <p className="text-default-500 text-sm">This poll is closed.</p>;
+  }
+
+  // Check voting restrictions
+  const restrictedTo = poll?.restricted_to;
+  const canVote = !restrictedTo || restrictedTo === 'everyone' || 
+    (restrictedTo === 'judges' && canJudge) || 
+    (restrictedTo === 'managers' && canManage);
+
+  if (!canVote) {
+    const restrictionLabel = restrictedTo === 'judges' ? 'judges' : 'managers';
+    return (
+      <div className="p-4 bg-warning-50 border border-warning-200 rounded-lg text-center">
+        <p className="text-warning-700 text-sm">This poll is restricted to {restrictionLabel} only.</p>
+      </div>
+    );
   }
 
   // --- Render: Ranked Choice ---
