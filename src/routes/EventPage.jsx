@@ -81,6 +81,7 @@ import AuditLog from "../components/AuditLog";
 import BracketView from "../components/BracketView";
 import MatchEditor from "../components/MatchEditor";
 import MatchTeamsEditor from "../components/MatchTeamsEditor";
+import NewRoundModal from "../components/NewRoundModal";
 import PollEditor from "../components/PollEditor";
 import PollVote from "../components/PollVote";
 import PollResults from "../components/PollResults";
@@ -181,6 +182,22 @@ export default function EventPage() {
   } = useDisclosure();
   const [matchTeamsTarget, setMatchTeamsTarget] = useState(null); // match to edit or null for new
   const [newMatchRound, setNewMatchRound] = useState(0);
+  
+  // Bracket team selection modal
+  const {
+    isOpen: isBracketTeamSelectOpen,
+    onOpen: onBracketTeamSelectOpen,
+    onClose: onBracketTeamSelectClose,
+  } = useDisclosure();
+  const [selectedBracketTeams, setSelectedBracketTeams] = useState(new Set());
+  const [bracketGenerateMode, setBracketGenerateMode] = useState('generate'); // 'generate' or 'regenerate'
+
+  // New round modal (for creating playoffs or new tournament phase)
+  const {
+    isOpen: isNewRoundOpen,
+    onOpen: onNewRoundOpen,
+    onClose: onNewRoundClose,
+  } = useDisclosure();
 
   const [polls, setPolls] = useState([]);
   const [pollOptions, setPollOptions] = useState({});
@@ -417,6 +434,7 @@ export default function EventPage() {
               return {
                 user_id: j.user_id,
                 created_at: j.created_at,
+                can_manage: j.can_manage || false,
                 display_name: profileData?.display_name || null,
                 avatar_url: profileData?.avatar_url || null,
                 email: profileData?.email || null,
@@ -553,8 +571,12 @@ export default function EventPage() {
   const pollIds = useMemo(() => polls.map(p => p.id).filter(Boolean), [polls]);
   const { getVotesForPoll } = useEventVotes(id, pollIds);
 
-  const buildBracketMatches = (type) => {
-    const shuffledTeams = shuffleTeams(teams);
+  const buildBracketMatches = (type, selectedTeamIds = null) => {
+    // Use selected teams if provided, otherwise use all teams
+    const teamsToUse = selectedTeamIds && selectedTeamIds.size > 0
+      ? teams.filter(t => selectedTeamIds.has(t.id))
+      : teams;
+    const shuffledTeams = shuffleTeams(teamsToUse);
     if (type === "single_elim") return generateSingleElimination(id, shuffledTeams);
     if (type === "round_robin") return generateRoundRobin(id, shuffledTeams);
     if (type === "swiss") return generateSwiss(id, shuffledTeams);
@@ -576,7 +598,8 @@ export default function EventPage() {
     }
   };
 
-  const handleGenerateBracket = async () => {
+  // Open team selection modal for generating bracket
+  const handleOpenBracketTeamSelect = (mode = 'generate') => {
     if (!teams || teams.length === 0) {
       addToast({
         title: "No teams",
@@ -585,10 +608,63 @@ export default function EventPage() {
       });
       return;
     }
-    setGeneratingBracket(true);
-    const generated = buildBracketMatches(bracketType);
+    if (mode === 'regenerate' && !confirm("Regenerate bracket? This will delete all existing matches.")) {
+      return;
+    }
+    setBracketGenerateMode(mode);
+    setSelectedBracketTeams(new Set(teams.map(t => t.id))); // Select all by default
+    onBracketTeamSelectOpen();
+  };
+
+  const handleGenerateBracket = async () => {
+    handleOpenBracketTeamSelect('generate');
+  };
+
+  const handleRegenerateBracket = async () => {
+    handleOpenBracketTeamSelect('regenerate');
+  };
+
+  // Actual bracket generation after team selection
+  const handleConfirmBracketGeneration = async () => {
+    if (selectedBracketTeams.size < 2) {
+      addToast({
+        title: "Not enough teams",
+        description: "Select at least 2 teams to generate a bracket",
+        severity: "warning",
+      });
+      return;
+    }
+
+    onBracketTeamSelectClose();
+
+    if (bracketGenerateMode === 'regenerate') {
+      setRegeneratingBracket(true);
+      const { error: delErr } = await supabase
+        .from("matches")
+        .delete()
+        .eq("event_id", id);
+      if (delErr) {
+        setRegeneratingBracket(false);
+        addToast({
+          title: "Regenerate failed",
+          description: delErr.message,
+          severity: "danger",
+        });
+        return;
+      }
+    } else {
+      setGeneratingBracket(true);
+    }
+
+    const generated = buildBracketMatches(bracketType, selectedBracketTeams);
     const { error: e } = await supabase.from("matches").insert(generated);
-    setGeneratingBracket(false);
+    
+    if (bracketGenerateMode === 'regenerate') {
+      setRegeneratingBracket(false);
+    } else {
+      setGeneratingBracket(false);
+    }
+
     if (e) {
       addToast({
         title: "Generation failed",
@@ -597,76 +673,28 @@ export default function EventPage() {
       });
       return;
     }
+
     notifyBracketInclusion(generated);
     await supabase.from("event_audit").insert({
       event_id: id,
-      action: "bracket.generate",
+      action: bracketGenerateMode === 'regenerate' ? "bracket.regenerate" : "bracket.generate",
       entity_type: "bracket",
-      message: `Generated ${bracketType.replace("_", " ")} bracket`,
+      message: `${bracketGenerateMode === 'regenerate' ? 'Regenerated' : 'Generated'} ${bracketType.replace("_", " ")} bracket with ${selectedBracketTeams.size} teams`,
       created_by: user?.id,
-      metadata: { bracket_type: bracketType },
-    });
-    await finalizeSingleElimBracket();
-    fetch();
-    addToast({ title: "Bracket generated", severity: "success" });
-  };
-
-  const handleRegenerateBracket = async () => {
-    if (!teams || teams.length === 0) {
-      addToast({
-        title: "No teams",
-        description: "Add teams first",
-        severity: "warning",
-      });
-      return;
-    }
-    if (!confirm("Regenerate bracket? This will delete all existing matches."))
-      return;
-    setRegeneratingBracket(true);
-    const { error: delErr } = await supabase
-      .from("matches")
-      .delete()
-      .eq("event_id", id);
-    if (delErr) {
-      setRegeneratingBracket(false);
-      addToast({
-        title: "Regenerate failed",
-        description: delErr.message,
-        severity: "danger",
-      });
-      return;
-    }
-    const generated = buildBracketMatches(bracketType);
-    const { error: insErr } = await supabase.from("matches").insert(generated);
-    setRegeneratingBracket(false);
-    if (insErr) {
-      addToast({
-        title: "Regenerate failed",
-        description: insErr.message,
-        severity: "danger",
-      });
-      return;
-    }
-    notifyBracketInclusion(generated);
-    await supabase.from("event_audit").insert({
-      event_id: id,
-      action: "bracket.regenerate",
-      entity_type: "bracket",
-      message: `Regenerated ${bracketType.replace("_", " ")} bracket`,
-      created_by: user?.id,
-      metadata: { bracket_type: bracketType },
+      metadata: { bracket_type: bracketType, team_count: selectedBracketTeams.size },
     });
     await finalizeSingleElimBracket();
 
-    // Broadcast reload to force sync clients - use existing channel pattern
-    const channel = supabase.channel(`bracket:${id}`);
-    await channel.subscribe();
-    await channel.send({ type: "broadcast", event: "reload", payload: {} });
-    // Clean up the broadcast channel after sending
-    await supabase.removeChannel(channel);
+    if (bracketGenerateMode === 'regenerate') {
+      // Broadcast reload to force sync clients - use existing channel pattern
+      const channel = supabase.channel(`bracket:${id}`);
+      await channel.subscribe();
+      await channel.send({ type: "broadcast", event: "reload", payload: {} });
+      await supabase.removeChannel(channel);
+    }
 
     fetch();
-    addToast({ title: "Bracket regenerated", severity: "success" });
+    addToast({ title: `Bracket ${bracketGenerateMode === 'regenerate' ? 'regenerated' : 'generated'}`, severity: "success" });
   };
 
   // Swiss bracket: Generate next round after current round is completed
@@ -1233,19 +1261,55 @@ export default function EventPage() {
       setError(e.message);
       return;
     }
+    
+    // Get judge profile for audit log
+    const judgeProfile = judgeSearchResults.find(j => j.id === uid);
+    const judgeName = judgeProfile?.display_name || judgeProfile?.email || 'Unknown';
+    
+    // Audit log
+    await supabase.from('event_audit').insert({
+      event_id: id,
+      action: 'judge.add',
+      entity_type: 'judge',
+      entity_id: uid,
+      message: `Added ${judgeName} as a judge`,
+      created_by: user?.id,
+      metadata: { user_id: uid, display_name: judgeName },
+    });
+    
     onJudgeClose();
     fetch();
   };
 
   const removeJudge = async (userId) => {
     if (!confirm("Remove this judge?")) return;
+    
+    // Get judge info before deletion for audit log
+    const judgeToRemove = judges.find(j => j.user_id === userId);
+    const judgeName = judgeToRemove?.display_name || judgeToRemove?.email || 'Unknown';
+    
     const { error: e } = await supabase
       .from("event_judges")
       .delete()
       .eq("event_id", id)
       .eq("user_id", userId);
-    if (e) setError(e.message);
-    else fetch();
+    if (e) {
+      setError(e.message);
+      return;
+    }
+    
+    // Audit log
+    await supabase.from('event_audit').insert({
+      event_id: id,
+      action: 'judge.remove',
+      entity_type: 'judge',
+      entity_id: userId,
+      message: `Removed ${judgeName} as a judge`,
+      created_by: user?.id,
+      metadata: { user_id: userId, display_name: judgeName },
+    });
+    
+    fetch();
   };
 
   const handleUndo = async () => {
@@ -1645,6 +1709,47 @@ export default function EventPage() {
                   >
                     {event?.visibility}
                   </Chip>
+                  {/* Role indicator chips */}
+                  {isAdmin && (
+                    <Chip
+                      size="sm"
+                      variant="flat"
+                      color="danger"
+                      startContent={<Shield size={12} className="ml-1" />}
+                    >
+                      Admin
+                    </Chip>
+                  )}
+                  {!isAdmin && event?.created_by === user?.id && (
+                    <Chip
+                      size="sm"
+                      variant="flat"
+                      color="warning"
+                      startContent={<Users size={12} className="ml-1" />}
+                    >
+                      Owner
+                    </Chip>
+                  )}
+                  {!isAdmin && event?.created_by !== user?.id && isCoManager && (
+                    <Chip
+                      size="sm"
+                      variant="flat"
+                      color="secondary"
+                      startContent={<Users size={12} className="ml-1" />}
+                    >
+                      Co-Organizer
+                    </Chip>
+                  )}
+                  {!canManage && judges.some((j) => j.user_id === user?.id) && (
+                    <Chip
+                      size="sm"
+                      variant="flat"
+                      color="primary"
+                      startContent={<Gavel size={12} className="ml-1" />}
+                    >
+                      Judge
+                    </Chip>
+                  )}
                 </div>
                 <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-linear-to-r from-foreground to-default-500 p-0 md:p-2">
                   {event?.name}
@@ -2013,7 +2118,7 @@ export default function EventPage() {
                           </Button>
                         )
                       )}
-                      {canManage && (
+                      {canJudge && (
                         <Button
                           color="primary"
                           onPress={openAddTeam}
@@ -2203,7 +2308,7 @@ export default function EventPage() {
                           progress and results
                         </p>
                       </div>
-                      {canManage && (
+                      {canJudge && (
                         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                           <Select
                             aria-label="Bracket Type"
@@ -2282,6 +2387,22 @@ export default function EventPage() {
                               </Button>
                             ) : null;
                           })()}
+                          
+                          {/* Create New Round / Playoffs button for all bracket types when matches complete */}
+                          {matches.length > 0 && canJudge && !isCompleted && (() => {
+                            const allMatchesComplete = matches.every((m) => m.status === "completed");
+                            return allMatchesComplete ? (
+                              <Button
+                                size="sm"
+                                color="secondary"
+                                variant="flat"
+                                onPress={onNewRoundOpen}
+                                startContent={<Trophy size={16} />}
+                              >
+                                {bracketType === 'single_elim' ? 'New Phase' : 'Create Playoffs'}
+                              </Button>
+                            ) : null;
+                          })()}
                         </div>
                       )}
                     </div>
@@ -2307,14 +2428,17 @@ export default function EventPage() {
                               matches={matches}
                               teams={teams}
                               bracketType={
-                                matches[0]?.bracket_type ||
-                                ("single_elim" && !isCompleted)
+                                // Use the bracket type from the earliest round (lowest round number)
+                                // to ensure we use the group stage type, not playoffs
+                                [...matches].sort((a, b) => (a.round || 0) - (b.round || 0))[0]?.bracket_type ||
+                                bracketType
                               }
                               canEdit={canJudge}
                               onEditMatch={handleEditMatch}
                               onAddMatch={handleAddMatch}
                               onEditTeams={handleEditTeams}
                               onDeleteMatch={handleDeleteMatch}
+                              onCreateNewRound={onNewRoundOpen}
                             />
                           </div>
                         )}
@@ -2405,7 +2529,7 @@ export default function EventPage() {
                         isClearable
                         onClear={() => setPollSearch("")}
                       />
-                      {canManage && (
+                      {canJudge && (
                         <Button
                           color="primary"
                           onPress={() => {
@@ -2417,7 +2541,7 @@ export default function EventPage() {
                           Create Poll
                         </Button>
                       )}
-                      {canManage && polls && polls.length > 0 && (
+                      {canJudge && polls && polls.length > 0 && (
                         <Button
                           color="flat"
                           variant="outline"
@@ -2436,7 +2560,7 @@ export default function EventPage() {
                           className="mx-auto mb-4 opacity-20"
                         />
                         <p>No active polls</p>
-                        {canManage && (
+                        {canJudge && (
                           <p className="text-sm mt-2">
                             Create a poll to engage your audience
                           </p>
@@ -2485,7 +2609,7 @@ export default function EventPage() {
                                     </h3>
                                   </div>
 
-                                  {canManage && (
+                                  {canJudge && (
                                     <div className="flex flex-wrap gap-2 items-center">
                                       {poll.status === "draft" && (
                                         <Button
@@ -2896,6 +3020,7 @@ export default function EventPage() {
         round={newMatchRound}
         bracketType={bracketType}
         isNewMatch={!matchTeamsTarget}
+        allMatches={matches}
         onUpdate={(matchOrId, update) => {
           fetch();
         }}
@@ -2928,6 +3053,115 @@ export default function EventPage() {
           }
         }}
       />
+
+      {/* New Round Modal */}
+      <NewRoundModal
+        isOpen={isNewRoundOpen}
+        onClose={onNewRoundClose}
+        eventId={id}
+        teams={teams}
+        matches={matches}
+        currentBracketType={bracketType}
+        onRoundCreated={() => fetch()}
+        currentUserId={user?.id}
+      />
+
+      {/* Bracket Team Selection Modal */}
+      <Modal isOpen={isBracketTeamSelectOpen} onClose={onBracketTeamSelectClose} size="lg" scrollBehavior="inside">
+        <ModalContent>
+          <ModalHeader className="flex items-center gap-2">
+            <Users size={20} />
+            Select Teams for Bracket
+          </ModalHeader>
+          <ModalBody className="space-y-4">
+            <div className="text-sm text-default-500 bg-default-100 p-3 rounded-lg">
+              Choose which teams to include in the {bracketType.replace('_', ' ')} bracket.
+              {bracketType === 'single_elim' && (
+                <span className="block mt-1 text-warning-600">
+                  Note: For single elimination, teams will be padded to the nearest power of 2 with byes.
+                </span>
+              )}
+            </div>
+            
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium">
+                {selectedBracketTeams.size} of {teams.length} teams selected
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={() => setSelectedBracketTeams(new Set(teams.map(t => t.id)))}
+                >
+                  Select All
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={() => setSelectedBracketTeams(new Set())}
+                >
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
+              {teams.map((team) => (
+                <div
+                  key={team.id}
+                  className={`
+                    flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all
+                    ${selectedBracketTeams.has(team.id) 
+                      ? 'border-primary bg-primary/10' 
+                      : 'border-default-200 hover:border-default-300'}
+                  `}
+                  onClick={() => {
+                    const newSet = new Set(selectedBracketTeams);
+                    if (newSet.has(team.id)) {
+                      newSet.delete(team.id);
+                    } else {
+                      newSet.add(team.id);
+                    }
+                    setSelectedBracketTeams(newSet);
+                  }}
+                >
+                  <div className={`
+                    w-5 h-5 rounded border-2 flex items-center justify-center transition-colors
+                    ${selectedBracketTeams.has(team.id) 
+                      ? 'border-primary bg-primary text-white' 
+                      : 'border-default-300'}
+                  `}>
+                    {selectedBracketTeams.has(team.id) && (
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-sm font-medium truncate">{team.name}</span>
+                  {team.score > 0 && (
+                    <Chip size="sm" variant="flat" className="ml-auto">
+                      {team.score} pts
+                    </Chip>
+                  )}
+                </div>
+              ))}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onBracketTeamSelectClose}>
+              Cancel
+            </Button>
+            <Button 
+              color="primary" 
+              onPress={handleConfirmBracketGeneration}
+              isDisabled={selectedBracketTeams.size < 2}
+              isLoading={generatingBracket || regeneratingBracket}
+            >
+              {bracketGenerateMode === 'regenerate' ? 'Regenerate Bracket' : 'Generate Bracket'}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <PollEditor
         isOpen={isPollEditorOpen}

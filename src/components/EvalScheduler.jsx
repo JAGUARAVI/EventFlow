@@ -820,7 +820,7 @@ export default function EvalScheduler({
             className="w-full sm:w-64"
             size="sm"
           />
-          {canManage && (
+          {canJudge && (
             <Button color="primary" startContent={<Plus size={18} />} onPress={openAddPanel}>
               Add Panel
             </Button>
@@ -892,7 +892,7 @@ export default function EvalScheduler({
           <CardBody className="text-center py-12">
             <Calendar className="mx-auto mb-4 text-default-400" size={48} />
             <p className="text-default-500">No evaluation panels yet.</p>
-            {canManage && (
+            {canJudge && (
               <Button
                 color="primary"
                 variant="flat"
@@ -1044,7 +1044,7 @@ export default function EvalScheduler({
                         </Dropdown>
                       </>
                     )}
-                    {canManage && (
+                    {canJudge && (
                       <Button
                         size="sm"
                         variant="flat"
