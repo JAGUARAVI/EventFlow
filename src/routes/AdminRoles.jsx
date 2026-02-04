@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardBody, CardHeader, Input, Button, Select, SelectItem, Chip, Avatar, Pagination, addToast } from '@heroui/react';
-import { Search, UserCog, Shield, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X } from 'lucide-react';
+import { 
+  Card, CardBody, CardHeader, Input, Button, Select, SelectItem, 
+  Chip, Avatar, Pagination, addToast 
+} from '@heroui/react';
+import { 
+  Search, UserCog, Shield, ArrowUpDown, ArrowUp, ArrowDown, 
+  Pencil, Check, X 
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const ROLES = [
-  { key: 'all', label: 'All Roles' },
   { key: 'admin', label: 'Admin' },
   { key: 'club_coordinator', label: 'Club Coordinator' },
   { key: 'judge', label: 'Judge' },
@@ -25,7 +30,7 @@ const ITEMS_PER_PAGE = 10;
 export default function AdminRoles() {
   const [users, setUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
+  const [roleFilters, setRoleFilters] = useState([]); // now an array
   const [sortKey, setSortKey] = useState('display_name_asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -37,15 +42,15 @@ export default function AdminRoles() {
     fetchUsers();
   }, []);
 
-  // Reset to first page when filters change
+  // Reset to page 1 when filters/search/sort change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, roleFilter, sortKey]);
+  }, [searchQuery, roleFilters, sortKey]);
 
   const filteredAndSortedUsers = useMemo(() => {
     let result = [...users];
 
-    // Filter by search query
+    // Search filter
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
       result = result.filter(
@@ -55,12 +60,15 @@ export default function AdminRoles() {
       );
     }
 
-    // Filter by role
-    if (roleFilter !== 'all') {
-      result = result.filter((u) => (u.role || 'viewer') === roleFilter);
+    // Multiple role filter
+    if (roleFilters.length > 0) {
+      result = result.filter((u) => {
+        const userRole = u.role || 'viewer';
+        return roleFilters.includes(userRole);
+      });
     }
 
-    // Sort
+    // Sorting
     const sortOption = SORT_OPTIONS.find((s) => s.key === sortKey);
     if (sortOption) {
       result.sort((a, b) => {
@@ -73,9 +81,8 @@ export default function AdminRoles() {
     }
 
     return result;
-  }, [users, searchQuery, roleFilter, sortKey]);
+  }, [users, searchQuery, roleFilters, sortKey]);
 
-  // Paginated users
   const paginatedUsers = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredAndSortedUsers.slice(startIndex, startIndex + ITEMS_PER_PAGE);
@@ -149,29 +156,21 @@ export default function AdminRoles() {
 
   const getRoleColor = (role) => {
     switch (role) {
-      case 'admin':
-        return 'danger';
-      case 'club_coordinator':
-        return 'warning';
-      case 'judge':
-        return 'primary';
+      case 'admin':           return 'danger';
+      case 'club_coordinator': return 'warning';
+      case 'judge':           return 'primary';
       case 'viewer':
-      default:
-        return 'default';
+      default:                return 'default';
     }
   };
 
   const getRoleLabel = (role) => {
     switch (role) {
-      case 'admin':
-        return 'Admin';
-      case 'club_coordinator':
-        return 'Club Coordinator';
-      case 'judge':
-        return 'Judge';
+      case 'admin':           return 'Admin';
+      case 'club_coordinator': return 'Club Coordinator';
+      case 'judge':           return 'Judge';
       case 'viewer':
-      default:
-        return 'Viewer';
+      default:                return 'Viewer';
     }
   };
 
@@ -207,12 +206,18 @@ export default function AdminRoles() {
               onClear={() => setSearchQuery('')}
               className="flex-1"
             />
+
             <Select
               label="Filter by Role"
-              selectedKeys={[roleFilter]}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="w-full sm:w-48"
+              selectionMode="multiple"              // ← important change
+              selectedKeys={roleFilters}
+              onSelectionChange={(keys) => {
+                // keys is a Set in @heroui/react when selectionMode="multiple"
+                setRoleFilters(Array.from(keys));
+              }}
+              className="w-full sm:w-64"
               size="sm"
+              placeholder="Select roles..."
             >
               {ROLES.map((role) => (
                 <SelectItem key={role.key} value={role.key}>
@@ -220,6 +225,7 @@ export default function AdminRoles() {
                 </SelectItem>
               ))}
             </Select>
+
             <Select
               label="Sort by"
               selectedKeys={[sortKey]}
@@ -238,9 +244,19 @@ export default function AdminRoles() {
         </CardBody>
       </Card>
 
-      <div className="mb-4 text-sm text-default-500">
+      <div className="mb-4 text-sm text-default-500 flex items-center gap-2 flex-wrap">
         Showing {paginatedUsers.length} of {filteredAndSortedUsers.length} users
-        {roleFilter !== 'all' && ` (filtered by ${ROLES.find(r => r.key === roleFilter)?.label})`}
+        {roleFilters.length > 0 && (
+          <>
+            {' (filtered by '}
+            {roleFilters.map((r) => (
+              <Chip key={r} size="sm" variant="flat">
+                {ROLES.find(role => role.key === r)?.label || r}
+              </Chip>
+            ))}
+            {')'}
+          </>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -323,9 +339,9 @@ export default function AdminRoles() {
                     <SelectItem key="viewer" value="viewer">
                       Viewer
                     </SelectItem>
-                    {/*<SelectItem key="judge" value="judge">
+                    <SelectItem key="judge" value="judge">
                       Judge
-                    </SelectItem>*/}
+                    </SelectItem>
                     <SelectItem key="club_coordinator" value="club_coordinator">
                       Club Coordinator
                     </SelectItem>
