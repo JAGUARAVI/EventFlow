@@ -1558,6 +1558,7 @@ export default function EventPage() {
 
   const judgeColumns = [
     <TableColumn key="judge">JUDGE</TableColumn>,
+    <TableColumn key="role">ROLE</TableColumn>,
     <TableColumn key="user_id">USER ID</TableColumn>,
     ...(canManage
       ? [
@@ -1584,6 +1585,15 @@ export default function EventPage() {
             <span className="text-xs text-foreground-500">{j.email}</span>
           </div>
         </div>
+      </TableCell>,
+      <TableCell key="role">
+        <Chip
+          size="sm"
+          variant="flat"
+          color={j.can_manage ? "secondary" : "primary"}
+        >
+          {j.can_manage ? "Co-Organizer" : "Judge"}
+        </Chip>
       </TableCell>,
       <TableCell key="user_id">
         <code className="text-xs text-foreground-500">{j.user_id}</code>
