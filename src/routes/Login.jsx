@@ -75,6 +75,8 @@ export default function Login() {
         setPhoneSent(true);
     };
 
+    const [signupSent, setSignupSent] = useState(false);
+
     const onEmailPasswordSubmit = async (e) => {
         e.preventDefault();
         setError("");
@@ -85,15 +87,34 @@ export default function Login() {
                 ? signInWithEmailPassword
                 : signUpWithEmailPassword;
 
-        const { error: err } = await fn(email.trim(), password);
+        const { data, error: err } = await fn(email.trim(), password);
         setLoading(false);
 
         if (err) {
-            setError(err.message);
+            // Handle "user already exists" error with a friendlier message
+            if (mode === "signup" && (
+                err.message?.toLowerCase().includes("already registered") ||
+                err.message?.toLowerCase().includes("already exists") ||
+                err.message?.toLowerCase().includes("user already")
+            )) {
+                setError("A user with this email already exists. Please sign in instead.");
+            } else {
+                setError(err.message);
+            }
             return;
         }
 
-        navigate("/");
+        // Check if user already exists (Supabase returns empty identities array for existing users)
+        if (mode === "signup" && data?.user?.identities?.length === 0) {
+            setError("A user with this email already exists. Please sign in instead.");
+            return;
+        }
+
+        if (mode === "signup") {
+            setSignupSent(true);
+        } else {
+            navigate("/");
+        }
     };
 
     const renderHeader = () => {
@@ -210,6 +231,38 @@ export default function Login() {
                             }}
                         >
                         <Tab key="password" title="Email & Password">
+                            {signupSent ? (
+                                <div className="text-center py-8 space-y-4">
+                                    <div className="w-16 h-16 rounded-full bg-success/10 text-success mx-auto flex items-center justify-center">
+                                        <Mail className="w-8 h-8" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold">
+                                            Confirm your email
+                                        </h3>
+                                        <p className="text-default-500 text-sm mt-1">
+                                            We've sent a confirmation email to{" "}
+                                            <span className="font-medium text-foreground">
+                                                {email}
+                                            </span>
+                                        </p>
+                                        <p className="text-default-400 text-xs mt-2">
+                                            Please check your inbox and click the link to activate your account.
+                                        </p>
+                                    </div>
+                                    <Button
+                                        variant="light"
+                                        color="primary"
+                                        onPress={() => {
+                                            setSignupSent(false);
+                                            setMode("signin");
+                                        }}
+                                        className="mt-2"
+                                    >
+                                        Back to Sign In
+                                    </Button>
+                                </div>
+                            ) : (
                             <form
                                 onSubmit={onEmailPasswordSubmit}
                                 className="flex flex-col gap-4 mt-2"
@@ -292,6 +345,7 @@ export default function Login() {
                                     </button>
                                 </div>
                             </form>
+                            )}
                         </Tab>
 
                         <Tab key="magic" title="Magic Link">
@@ -408,11 +462,6 @@ export default function Login() {
                     )}
                 </CardBody>
             </Card>
-
-            <div className="absolute bottom-4 text-center text-xs text-default-400">
-                &copy; {new Date().getFullYear()} EventFlow. All rights
-                reserved.
-            </div>
         </div>
     );
 }

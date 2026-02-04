@@ -58,7 +58,7 @@ export default function Navbar() {
             }}
         >
             <NavbarBrand as={Link} to="/" className="gap-3">
-                <div className="w-12 h-12 rounded-lg bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-tr from-sunset-blue to-sunset-pink flex items-center justify-center text-white font-bold text-xl">
                     <Image
                             src="/EventFlow.svg"
                             alt="EventFlow Logo"
