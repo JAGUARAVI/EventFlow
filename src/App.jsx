@@ -10,6 +10,7 @@ import PublicLeaderboard from "./routes/PublicLeaderboard";
 import PublicPollVote from "./routes/PublicPollVote";
 import Profile from "./routes/Profile";
 import AdminRoles from "./routes/AdminRoles";
+import AssetManager from "./routes/AssetManager";
 import NotFound from "./routes/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RequireRole from "./components/RequireRole";
@@ -92,6 +93,21 @@ export default function App() {
                                 <ProtectedRoute>
                                     <RequireRole allowedRoles={["admin"]}>
                                         <AdminRoles />
+                                    </RequireRole>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/assets"
+                            element={
+                                <ProtectedRoute>
+                                    <RequireRole
+                                        allowedRoles={[
+                                            "admin",
+                                            "club_coordinator",
+                                        ]}
+                                    >
+                                        <AssetManager />
                                     </RequireRole>
                                 </ProtectedRoute>
                             }

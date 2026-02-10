@@ -22,7 +22,8 @@ import {
     User,
     LogOut,
     Settings,
-    Palette
+    Palette,
+    HardDrive
 } from "lucide-react";
 
 export default function Navbar() {
@@ -169,6 +170,17 @@ export default function Navbar() {
                                     }
                                 >
                                     Manage Roles
+                                </DropdownItem>
+                            )}
+                            {(profile?.role === "admin" || profile?.role === "club_coordinator") && (
+                                <DropdownItem
+                                    key="assets"
+                                    href="/assets"
+                                    startContent={
+                                        <HardDrive className="w-4 h-4" />
+                                    }
+                                >
+                                    Asset Manager
                                 </DropdownItem>
                             )}
                             <DropdownItem
