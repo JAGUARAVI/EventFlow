@@ -19,6 +19,7 @@ import {
   DropdownTrigger,
   DropdownMenu,
   DropdownItem,
+  Switch,
 } from '@heroui/react';
 import {
   Upload,
@@ -39,8 +40,13 @@ import {
   MoreVertical,
   Download,
   Eye,
+  EyeOff,
+  Globe,
+  Minimize2,
 } from 'lucide-react';
-import { listAssets, uploadAsset, deleteAssets, getAssetPublicUrl } from '../lib/assets';
+import { listAllAssets, uploadAsset, deleteAssets, getAssetPublicUrl } from '../lib/assets';
+import ImageCompressor from '../components/ImageCompressor';
+import { useAuth } from '../hooks/useAuth';
 
 const ITEMS_PER_PAGE = 24;
 
@@ -80,6 +86,8 @@ function stripTimestampPrefix(name) {
 }
 
 export default function AssetManager() {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -90,7 +98,14 @@ export default function AssetManager() {
   const [selectedAssets, setSelectedAssets] = useState(new Set());
   const [previewAsset, setPreviewAsset] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [compressFiles, setCompressFiles] = useState([]);
+  const [compressMode, setCompressMode] = useState('upload'); // 'upload' | 'replace'
+  const [compressTarget, setCompressTarget] = useState(null); // asset name being re-compressed
+  const [uploadAsUnlisted, setUploadAsUnlisted] = useState(false); // visibility toggle
+  const [visibilityFilter, setVisibilityFilter] = useState('all'); // 'all' | 'public' | 'unlisted'
   const fileInputRef = useRef(null);
+  const compressInputRef = useRef(null);
+  const progressIntervalRef = useRef(null);
   const {
     isOpen: isDeleteOpen,
     onOpen: onDeleteOpen,
@@ -101,10 +116,20 @@ export default function AssetManager() {
     onOpen: onPreviewOpen,
     onClose: onPreviewClose,
   } = useDisclosure();
+  const {
+    isOpen: isCompressOpen,
+    onOpen: onCompressOpen,
+    onClose: onCompressClose,
+  } = useDisclosure();
+
+  // Clean up progress interval on unmount
+  useEffect(() => {
+    return () => clearInterval(progressIntervalRef.current);
+  }, []);
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await listAssets();
+    const { data, error } = await listAllAssets(isAdmin);
     if (error) {
       addToast({ title: 'Failed to load assets', description: error.message, color: 'danger' });
     } else {
@@ -112,7 +137,7 @@ export default function AssetManager() {
       setAssets((data || []).filter((f) => f.name && !f.name.startsWith('.')));
     }
     setLoading(false);
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     fetchAssets();
@@ -120,10 +145,20 @@ export default function AssetManager() {
 
   // Filter
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return assets;
-    const q = searchQuery.toLowerCase();
-    return assets.filter((a) => stripTimestampPrefix(a.name).toLowerCase().includes(q));
-  }, [assets, searchQuery]);
+    let result = assets;
+    // Visibility filter
+    if (visibilityFilter === 'public') {
+      result = result.filter((a) => a._folder === 'public');
+    } else if (visibilityFilter === 'unlisted') {
+      result = result.filter((a) => a._folder === 'unlisted');
+    }
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((a) => stripTimestampPrefix(a.name).toLowerCase().includes(q));
+    }
+    return result;
+  }, [assets, searchQuery, visibilityFilter]);
 
   // Paginate
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
@@ -135,6 +170,33 @@ export default function AssetManager() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
+
+  // Simulated progress helper — advances progress smoothly while awaiting each file upload
+  const startProgressSim = useCallback((fileIndex, totalFiles) => {
+    // Each file gets an equal slice of the 0–100 range
+    const sliceSize = 100 / totalFiles;
+    const baseProgress = fileIndex * sliceSize;
+    // Simulate progress advancing within the current file's slice (up to ~90% of the slice)
+    const maxForSlice = baseProgress + sliceSize * 0.9;
+    clearInterval(progressIntervalRef.current);
+    progressIntervalRef.current = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= maxForSlice) {
+          clearInterval(progressIntervalRef.current);
+          return prev;
+        }
+        // Ease-out: smaller increments as we approach the target
+        const remaining = maxForSlice - prev;
+        return Math.round((prev + Math.max(remaining * 0.08, 0.5)) * 10) / 10;
+      });
+    }, 150);
+  }, []);
+
+  const stopProgressSim = useCallback((fileIndex, totalFiles) => {
+    clearInterval(progressIntervalRef.current);
+    // Jump to the completion percentage for this file
+    setUploadProgress(Math.round(((fileIndex + 1) / totalFiles) * 100));
+  }, []);
 
   // Upload handler
   const handleUpload = useCallback(
@@ -153,19 +215,23 @@ export default function AssetManager() {
         if (file.size > 50 * 1024 * 1024) {
           addToast({ title: `${file.name} exceeds 50 MB limit`, color: 'warning' });
           failCount++;
+          stopProgressSim(i, files.length);
           continue;
         }
 
-        const { error } = await uploadAsset(file);
+        startProgressSim(i, files.length);
+        const { error } = await uploadAsset(file, { unlisted: uploadAsUnlisted });
+        stopProgressSim(i, files.length);
+
         if (error) {
           addToast({ title: `Failed to upload ${file.name}`, description: error.message, color: 'danger' });
           failCount++;
         } else {
           successCount++;
         }
-        setUploadProgress(Math.round(((i + 1) / files.length) * 100));
       }
 
+      clearInterval(progressIntervalRef.current);
       // Reset file input
       if (fileInputRef.current) fileInputRef.current.value = '';
       setUploading(false);
@@ -179,7 +245,7 @@ export default function AssetManager() {
         fetchAssets();
       }
     },
-    [fetchAssets],
+    [fetchAssets, uploadAsUnlisted, startProgressSim, stopProgressSim],
   );
 
   // Copy public URL
@@ -235,7 +301,7 @@ export default function AssetManager() {
     if (selectedAssets.size === paginated.length) {
       setSelectedAssets(new Set());
     } else {
-      setSelectedAssets(new Set(paginated.map((a) => a.name)));
+      setSelectedAssets(new Set(paginated.map((a) => a._fullPath)));
     }
   }, [selectedAssets, paginated]);
 
@@ -247,6 +313,79 @@ export default function AssetManager() {
     },
     [onPreviewOpen],
   );
+
+  // Open compressor with files from input
+  const handleCompressUpload = useCallback((e) => {
+    const files = Array.from(e.target.files || []);
+    const images = files.filter((f) => f.type.startsWith('image/') && !f.type.includes('svg'));
+    if (!images.length) {
+      addToast({ title: 'No compressible images selected', description: 'SVG and non-image files cannot be compressed', color: 'warning' });
+      return;
+    }
+    if (compressInputRef.current) compressInputRef.current.value = '';
+    setCompressFiles(images);
+    setCompressMode('upload');
+    setCompressTarget(null);
+    onCompressOpen();
+  }, [onCompressOpen]);
+
+  // Compress and upload completed files
+  const handleCompressComplete = useCallback(async (compressedFiles) => {
+    setUploading(true);
+    setUploadProgress(0);
+    let successCount = 0;
+    let failCount = 0;
+    // When replacing, keep same visibility folder; when uploading, use current toggle
+    const useUnlisted = compressMode === 'replace' && compressTarget
+      ? compressTarget.startsWith('unlisted/')
+      : uploadAsUnlisted;
+    for (let i = 0; i < compressedFiles.length; i++) {
+      const file = compressedFiles[i];
+      startProgressSim(i, compressedFiles.length);
+      const { error } = await uploadAsset(file, { unlisted: useUnlisted });
+      stopProgressSim(i, compressedFiles.length);
+      if (error) {
+        addToast({ title: `Failed to upload ${file.name}`, description: error.message, color: 'danger' });
+        failCount++;
+      } else {
+        successCount++;
+      }
+    }
+    clearInterval(progressIntervalRef.current);
+    // If replacing, delete the original after successful upload
+    if (compressMode === 'replace' && compressTarget && successCount > 0) {
+      await deleteAssets([compressTarget]);
+    }
+    setUploading(false);
+    setUploadProgress(0);
+    if (successCount > 0) {
+      addToast({
+        title: compressMode === 'replace'
+          ? `Replaced with compressed version`
+          : `Uploaded ${successCount} compressed image${successCount > 1 ? 's' : ''}`,
+        color: 'success',
+      });
+      fetchAssets();
+    }
+  }, [fetchAssets, compressMode, compressTarget, uploadAsUnlisted, startProgressSim, stopProgressSim]);
+
+  // Optimize an existing uploaded image
+  const handleOptimizeExisting = useCallback(async (assetFullPath) => {
+    const publicUrl = getAssetPublicUrl(assetFullPath);
+    const assetName = assetFullPath.split('/').pop();
+    try {
+      const response = await fetch(publicUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const file = new File([blob], stripTimestampPrefix(assetName), { type: blob.type });
+      setCompressFiles([file]);
+      setCompressMode('replace');
+      setCompressTarget(assetFullPath);
+      onCompressOpen();
+    } catch (err) {
+      addToast({ title: 'Failed to load image for optimization', description: err.message, color: 'danger' });
+    }
+  }, [onCompressOpen]);
 
   // Drag-and-drop
   const [dragOver, setDragOver] = useState(false);
@@ -317,7 +456,16 @@ export default function AssetManager() {
                 isLoading={uploading}
                 size="sm"
               >
-                {uploading ? `Uploading ${uploadProgress}%` : 'Upload Files'}
+                {uploading ? `Uploading ${Math.round(uploadProgress)}%` : 'Upload Files'}
+              </Button>
+              <Button
+                color="secondary"
+                variant="flat"
+                startContent={<Minimize2 size={16} />}
+                onPress={() => compressInputRef.current?.click()}
+                size="sm"
+              >
+                Compress & Upload
               </Button>
               <input
                 ref={fileInputRef}
@@ -325,6 +473,14 @@ export default function AssetManager() {
                 multiple
                 className="hidden"
                 onChange={handleUpload}
+              />
+              <input
+                ref={compressInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={handleCompressUpload}
               />
 
               <div className="flex border border-default-200 rounded-lg overflow-hidden">
@@ -348,6 +504,59 @@ export default function AssetManager() {
                 </Button>
               </div>
             </div>
+          </div>
+
+          {/* Visibility row */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mt-3 pt-3 border-t border-default-100">
+            {/* Upload visibility toggle */}
+            <div className="flex items-center gap-2">
+              <Tooltip content="When enabled, uploaded assets are only visible to admins">
+                <Switch
+                  size="sm"
+                  isSelected={uploadAsUnlisted}
+                  onValueChange={setUploadAsUnlisted}
+                  startContent={<EyeOff size={12} />}
+                  endContent={<Globe size={12} />}
+                >
+                  <span className="text-sm">Upload as unlisted</span>
+                </Switch>
+              </Tooltip>
+            </div>
+
+            {/* Visibility filter chips */}
+            {isAdmin && (
+              <div className="flex gap-1.5 sm:ml-auto">
+                <Chip
+                  variant={visibilityFilter === 'all' ? 'solid' : 'flat'}
+                  color={visibilityFilter === 'all' ? 'primary' : 'default'}
+                  className="cursor-pointer"
+                  onClick={() => setVisibilityFilter('all')}
+                  size="sm"
+                >
+                  All
+                </Chip>
+                <Chip
+                  variant={visibilityFilter === 'public' ? 'solid' : 'flat'}
+                  color={visibilityFilter === 'public' ? 'success' : 'default'}
+                  className="cursor-pointer"
+                  startContent={<Globe size={10} />}
+                  onClick={() => setVisibilityFilter('public')}
+                  size="sm"
+                >
+                  Public
+                </Chip>
+                <Chip
+                  variant={visibilityFilter === 'unlisted' ? 'solid' : 'flat'}
+                  color={visibilityFilter === 'unlisted' ? 'warning' : 'default'}
+                  className="cursor-pointer"
+                  startContent={<EyeOff size={10} />}
+                  onClick={() => setVisibilityFilter('unlisted')}
+                  size="sm"
+                >
+                  Unlisted
+                </Chip>
+              </div>
+            )}
           </div>
         </CardBody>
       </Card>
@@ -424,15 +633,17 @@ export default function AssetManager() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {paginated.map((asset) => {
             const isImage = isImageFile(asset.name);
-            const publicUrl = getAssetPublicUrl(asset.name);
-            const selected = selectedAssets.has(asset.name);
+            const fullPath = asset._fullPath;
+            const publicUrl = getAssetPublicUrl(fullPath);
+            const selected = selectedAssets.has(fullPath);
             const displayName = stripTimestampPrefix(asset.name);
+            const isUnlisted = asset._folder === 'unlisted';
 
             return (
               <Card
-                key={asset.name}
+                key={fullPath}
                 isPressable
-                onPress={() => toggleSelect(asset.name)}
+                onPress={() => toggleSelect(fullPath)}
                 className={`group transition-all ${selected ? 'ring-2 ring-primary shadow-lg' : 'hover:shadow-md'}`}
               >
                 <CardBody className="p-0 overflow-hidden">
@@ -466,6 +677,15 @@ export default function AssetManager() {
                       {selected && <Check size={12} className="text-white" />}
                     </div>
 
+                    {/* Unlisted badge */}
+                    {isUnlisted && (
+                      <div className="absolute bottom-2 left-2">
+                        <Chip size="sm" variant="flat" color="warning" startContent={<EyeOff size={10} />} className="h-5 text-[10px]">
+                          Unlisted
+                        </Chip>
+                      </div>
+                    )}
+
                     {/* Actions */}
                     <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Dropdown>
@@ -480,40 +700,29 @@ export default function AssetManager() {
                             <MoreVertical size={14} />
                           </Button>
                         </DropdownTrigger>
-                        <DropdownMenu aria-label="Asset actions">
-                          {isImage && (
+                        <DropdownMenu
+                          aria-label="Asset actions"
+                          items={[
+                            ...(isImage ? [{ key: 'preview', label: 'Preview', icon: <Eye size={14} />, action: () => openPreview(asset) }] : []),
+                            ...(isImage && !asset.name.endsWith('.svg') ? [{ key: 'optimize', label: 'Optimize', icon: <Minimize2 size={14} />, action: () => handleOptimizeExisting(fullPath) }] : []),
+                            { key: 'copy', label: copiedId === fullPath ? 'Copied!' : 'Copy URL', icon: copiedId === fullPath ? <Check size={14} /> : <Copy size={14} />, action: () => copyUrl(fullPath) },
+                            { key: 'open', label: 'Open in Tab', icon: <ExternalLink size={14} />, href: publicUrl },
+                            { key: 'delete', label: 'Delete', icon: <Trash2 size={14} />, action: () => handleDeleteSingle(fullPath), color: 'danger' },
+                          ]}
+                        >
+                          {(item) => (
                             <DropdownItem
-                              key="preview"
-                              startContent={<Eye size={14} />}
-                              onPress={() => openPreview(asset)}
+                              key={item.key}
+                              startContent={item.icon}
+                              onPress={item.action}
+                              href={item.href}
+                              target={item.href ? '_blank' : undefined}
+                              color={item.color}
+                              className={item.color === 'danger' ? 'text-danger' : undefined}
                             >
-                              Preview
+                              {item.label}
                             </DropdownItem>
                           )}
-                          <DropdownItem
-                            key="copy"
-                            startContent={copiedId === asset.name ? <Check size={14} /> : <Copy size={14} />}
-                            onPress={() => copyUrl(asset.name)}
-                          >
-                            {copiedId === asset.name ? 'Copied!' : 'Copy URL'}
-                          </DropdownItem>
-                          <DropdownItem
-                            key="open"
-                            startContent={<ExternalLink size={14} />}
-                            href={publicUrl}
-                            target="_blank"
-                          >
-                            Open in Tab
-                          </DropdownItem>
-                          <DropdownItem
-                            key="delete"
-                            startContent={<Trash2 size={14} />}
-                            color="danger"
-                            className="text-danger"
-                            onPress={() => handleDeleteSingle(asset.name)}
-                          >
-                            Delete
-                          </DropdownItem>
                         </DropdownMenu>
                       </Dropdown>
                     </div>
@@ -540,15 +749,17 @@ export default function AssetManager() {
         <div className="space-y-2">
           {paginated.map((asset) => {
             const isImage = isImageFile(asset.name);
-            const publicUrl = getAssetPublicUrl(asset.name);
-            const selected = selectedAssets.has(asset.name);
+            const fullPath = asset._fullPath;
+            const publicUrl = getAssetPublicUrl(fullPath);
+            const selected = selectedAssets.has(fullPath);
             const displayName = stripTimestampPrefix(asset.name);
+            const isUnlisted = asset._folder === 'unlisted';
 
             return (
               <Card
-                key={asset.name}
+                key={fullPath}
                 isPressable
-                onPress={() => toggleSelect(asset.name)}
+                onPress={() => toggleSelect(fullPath)}
                 className={`transition-all ${selected ? 'ring-2 ring-primary' : ''}`}
               >
                 <CardBody className="p-3">
@@ -573,7 +784,14 @@ export default function AssetManager() {
 
                     {/* Name & details */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{displayName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{displayName}</p>
+                        {isUnlisted && (
+                          <Chip size="sm" variant="flat" color="warning" startContent={<EyeOff size={10} />} className="h-5 text-[10px]">
+                            Unlisted
+                          </Chip>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 text-xs text-default-400">
                         <span>{formatBytes(asset.metadata?.size)}</span>
                         <span>·</span>
@@ -596,9 +814,16 @@ export default function AssetManager() {
                           </Button>
                         </Tooltip>
                       )}
-                      <Tooltip content={copiedId === asset.name ? 'Copied!' : 'Copy URL'}>
-                        <Button isIconOnly size="sm" variant="light" onPress={() => copyUrl(asset.name)}>
-                          {copiedId === asset.name ? <Check size={16} className="text-success" /> : <Copy size={16} />}
+                      {isImage && !asset.name.endsWith('.svg') && (
+                        <Tooltip content="Optimize">
+                          <Button isIconOnly size="sm" variant="light" color="secondary" onPress={() => handleOptimizeExisting(fullPath)}>
+                            <Minimize2 size={16} />
+                          </Button>
+                        </Tooltip>
+                      )}
+                      <Tooltip content={copiedId === fullPath ? 'Copied!' : 'Copy URL'}>
+                        <Button isIconOnly size="sm" variant="light" onPress={() => copyUrl(fullPath)}>
+                          {copiedId === fullPath ? <Check size={16} className="text-success" /> : <Copy size={16} />}
                         </Button>
                       </Tooltip>
                       <Tooltip content="Open">
@@ -619,7 +844,7 @@ export default function AssetManager() {
                           size="sm"
                           variant="light"
                           color="danger"
-                          onPress={() => handleDeleteSingle(asset.name)}
+                          onPress={() => handleDeleteSingle(fullPath)}
                         >
                           <Trash2 size={16} />
                         </Button>
@@ -674,6 +899,19 @@ export default function AssetManager() {
         </ModalContent>
       </Modal>
 
+      {/* Image compressor modal */}
+      <ImageCompressor
+        isOpen={isCompressOpen}
+        onClose={() => {
+          onCompressClose();
+          setCompressFiles([]);
+          setCompressTarget(null);
+        }}
+        files={compressFiles}
+        onComplete={handleCompressComplete}
+        mode={compressMode}
+      />
+
       {/* Image preview modal */}
       <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="3xl">
         <ModalContent>
@@ -684,7 +922,7 @@ export default function AssetManager() {
               </ModalHeader>
               <ModalBody className="p-2">
                 <img
-                  src={getAssetPublicUrl(previewAsset.name)}
+                  src={getAssetPublicUrl(previewAsset._fullPath)}
                   alt={previewAsset.name}
                   className="w-full max-h-[70vh] object-contain rounded-lg"
                 />
@@ -695,13 +933,13 @@ export default function AssetManager() {
                     size="sm"
                     variant="flat"
                     startContent={<Copy size={14} />}
-                    onPress={() => copyUrl(previewAsset.name)}
+                    onPress={() => copyUrl(previewAsset._fullPath)}
                   >
                     Copy URL
                   </Button>
                   <Button
                     as="a"
-                    href={getAssetPublicUrl(previewAsset.name)}
+                    href={getAssetPublicUrl(previewAsset._fullPath)}
                     target="_blank"
                     size="sm"
                     variant="flat"
