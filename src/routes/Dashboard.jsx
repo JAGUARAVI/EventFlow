@@ -352,7 +352,7 @@ function EventCard({ event: e }) {
                 <div className="flex gap-2 mb-2 flex-wrap">
                     <Chip
                         size="sm"
-                        color={e.visibility === "public" ? "success" : "default"}
+                        color={e.visibility === "public" ? "success" : e.visibility === "unlisted" ? "warning" : "default"}
                         variant="flat"
                         className="capitalize"
                     >

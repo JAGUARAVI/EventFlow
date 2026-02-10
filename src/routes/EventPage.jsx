@@ -38,6 +38,7 @@ import {
   Tooltip,
   AvatarGroup,
   Divider,
+  Switch,
 } from "@heroui/react";
 import { Link as HeroLink } from "@heroui/link";
 import {
@@ -53,6 +54,7 @@ import {
   RefreshCw,
   Calendar,
   Clock,
+  Lock,
   Users,
   Trophy,
   BarChart2,
@@ -70,14 +72,18 @@ import {
   QrCode,
   Edit,
   ClipboardList,
+  Layers,
 } from "lucide-react";
 import { supabase, withRetry } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 import { useRealtimeLeaderboard } from "../hooks/useRealtimeLeaderboard";
 import { useRealtimeBracket } from "../hooks/useRealtimeBracket";
+import { useRealtimeCategories } from "../hooks/useRealtimeCategories";
+import { fetchCategories, fetchCategoryScores, upsertCategoryScore } from "../lib/categories";
 
 import Leaderboard from "../components/Leaderboard";
 import AuditLog from "../components/AuditLog";
+import CategoryModal from "../components/CategoryModal";
 import BracketView from "../components/BracketView";
 import MatchEditor from "../components/MatchEditor";
 import MatchTeamsEditor from "../components/MatchTeamsEditor";
@@ -125,8 +131,13 @@ export default function EventPage() {
   const [matches, setMatches] = useState([]);
   const [rounds, setRounds] = useState([]);
   const [scoreHistory, setScoreHistory] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [categoryScores, setCategoryScores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [accessGranted, setAccessGranted] = useState(false);
+  const [accessCodeError, setAccessCodeError] = useState("");
   const [bracketType, setBracketType] = useState("single_elim");
   const [generatingBracket, setGeneratingBracket] = useState(false);
   const [regeneratingBracket, setRegeneratingBracket] = useState(false);
@@ -278,6 +289,12 @@ export default function EventPage() {
     onOpen: onVoteManagerOpen,
     onClose: onVoteManagerClose,
   } = useDisclosure();
+  const {
+    isOpen: isCategoryOpen,
+    onOpen: onCategoryOpen,
+    onClose: onCategoryClose,
+  } = useDisclosure();
+  const [editingCategory, setEditingCategory] = useState(null);
   const [selectedPoc, setSelectedPoc] = useState(null);
   const [pocLoading, setPocLoading] = useState(false);
   const [managingPoll, setManagingPoll] = useState(null);
@@ -381,7 +398,7 @@ export default function EventPage() {
       if (!id) return;
       if (showLoading) setLoading(true);
       try {
-        const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes, rRes] =
+        const [eRes, tRes, jRes, aRes, mRes, pRes, auditRes, rRes, catRes, catScoreRes] =
           await Promise.all([
             supabase.from("events").select("*").eq("id", id).single(),
             supabase
@@ -420,6 +437,15 @@ export default function EventPage() {
               .select("*")
               .eq("event_id", id)
               .order("number"),
+            supabase
+              .from("categories")
+              .select("*")
+              .eq("event_id", id)
+              .order("created_at"),
+            supabase
+              .from("category_scores")
+              .select("*")
+              .eq("event_id", id),
           ]);
 
         // for each judge fetch their public.profile info
@@ -453,11 +479,15 @@ export default function EventPage() {
           setMatches([]);
           setPolls([]);
           setPollOptions({});
+          setCategories([]);
+          setCategoryScores([]);
           return;
         }
         setEvent(eRes.data);
         setTeams(tRes.data || []);
         setJudges(jRes.data || []);
+        setCategories(catRes.data || []);
+        setCategoryScores(catScoreRes.data || []);
         setRounds(rRes.data || []);
         setScoreHistory(aRes.data || []);
         const rawScoreHistory = aRes.data || [];
@@ -548,9 +578,41 @@ export default function EventPage() {
     fetch(true);
   }, [fetch]);
 
+  // Check if access was previously granted for this private event
+  useEffect(() => {
+    if (!event || !id) return;
+    if (event.visibility !== 'private') { setAccessGranted(true); return; }
+    if (canJudge || canManage || isAdmin) { setAccessGranted(true); return; }
+    // Check sessionStorage for previously verified code
+    const storedCode = sessionStorage.getItem(`event_access_${id}`);
+    if (storedCode && event.access_code && storedCode === event.access_code) {
+      setAccessGranted(true);
+    }
+  }, [event, id, canJudge, canManage, isAdmin]);
+
+  const handleAccessCodeSubmit = useCallback(async () => {
+    if (accessCodeInput.length !== 6) {
+      setAccessCodeError("Please enter a 6-digit code");
+      return;
+    }
+    setAccessCodeError("");
+    const { data, error } = await supabase.rpc('verify_event_access_code', {
+      eid: id,
+      code: accessCodeInput,
+    });
+    if (error || !data) {
+      setAccessCodeError("Invalid access code");
+      return;
+    }
+    sessionStorage.setItem(`event_access_${id}`, accessCodeInput);
+    setAccessGranted(true);
+    addToast({ title: "Access granted", severity: "success" });
+  }, [accessCodeInput, id]);
+
   // RealtimeContext now handles connection health and reconnection automatically
 
   useRealtimeLeaderboard(id, setTeams, { currentUserId: user?.id });
+  useRealtimeCategories(id, setCategories, setCategoryScores);
 
   const onMatchComplete = useCallback((completedMatch) => {
     confetti({
@@ -1523,6 +1585,102 @@ export default function EventPage() {
     }
   }, [id, user?.id]);
 
+  // Refs for stable access in callbacks without stale closures
+  const categoryScoresRef = useRef(categoryScores);
+  useEffect(() => { categoryScoresRef.current = categoryScores; }, [categoryScores]);
+  const categoriesRef = useRef(categories);
+  useEffect(() => { categoriesRef.current = categories; }, [categories]);
+
+  const handleCategoryScoreChange = useCallback(async (teamId, categoryId, deltaVal) => {
+    if (!user?.id) return;
+    const t = teamsRef.current.find((x) => x.id === teamId);
+    if (!t) return;
+
+    // Read latest scores from ref to avoid stale closure
+    const currentScores = categoryScoresRef.current;
+    const existing = currentScores.find(
+      (s) => s.team_id === teamId && s.category_id === categoryId,
+    );
+    const prev = Number(existing?.raw_points) || 0;
+    const next = prev + deltaVal;
+
+    // Optimistic update — triggers cumulativeTeams recompute in Leaderboard
+    setCategoryScores((old) => {
+      const idx = old.findIndex(
+        (s) => s.team_id === teamId && s.category_id === categoryId,
+      );
+      if (idx >= 0) {
+        const updated = [...old];
+        updated[idx] = { ...updated[idx], raw_points: next };
+        return updated;
+      }
+      return [
+        ...old,
+        {
+          id: `temp-${teamId}-${categoryId}`,
+          event_id: id,
+          team_id: teamId,
+          category_id: categoryId,
+          raw_points: next,
+          changed_by: user.id,
+        },
+      ];
+    });
+
+    const { error } = await upsertCategoryScore(id, teamId, categoryId, next, user.id);
+    if (error) {
+      // Rollback
+      setCategoryScores((old) => {
+        const idx = old.findIndex(
+          (s) => s.team_id === teamId && s.category_id === categoryId,
+        );
+        if (idx >= 0) {
+          const updated = [...old];
+          updated[idx] = { ...updated[idx], raw_points: prev };
+          return updated;
+        }
+        return old.filter(
+          (s) => !(s.team_id === teamId && s.category_id === categoryId),
+        );
+      });
+      addToast({ title: 'Category score update failed', description: error.message, severity: 'danger' });
+    } else {
+      // Audit log
+      const cat = categoriesRef.current.find((c) => c.id === categoryId);
+      await supabase.from('event_audit').insert({
+        event_id: id,
+        action: 'update',
+        entity_type: 'category_score',
+        entity_id: categoryId,
+        message: `${t.name}: ${cat?.name || 'Category'} ${deltaVal >= 0 ? '+' : ''}${deltaVal} (${prev} → ${next})`,
+        created_by: user.id,
+      });
+    }
+  }, [id, user?.id]);
+
+  const handleToggleCategories = useCallback(async (enabled) => {
+    if (!event) return;
+    const newSettings = { ...(event.settings || {}), categories_enabled: enabled };
+    const { error } = await supabase
+      .from('events')
+      .update({ settings: newSettings })
+      .eq('id', id);
+    if (error) {
+      addToast({ title: 'Failed to update setting', description: error.message, severity: 'danger' });
+    } else {
+      setEvent((prev) => ({ ...prev, settings: newSettings }));
+      await supabase.from('event_audit').insert({
+        event_id: id,
+        action: 'update',
+        entity_type: 'event_settings',
+        entity_id: id,
+        message: `Scoring categories ${enabled ? 'enabled' : 'disabled'}`,
+        created_by: user?.id,
+      });
+      addToast({ title: `Categories ${enabled ? 'enabled' : 'disabled'}`, severity: 'success' });
+    }
+  }, [event, id, user?.id]);
+
   const teamColumns = [
     <TableColumn key="name">NAME</TableColumn>,
     ...(canManage
@@ -1672,6 +1830,56 @@ export default function EventPage() {
     );
   }
 
+  // Access code gate for private events
+  if (event && event.visibility === 'private' && !accessGranted && event.access_code) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-linear-to-br from-background via-default-50/50 to-background">
+        <Card className="max-w-md w-full shadow-xl">
+          <CardBody className="p-8 flex flex-col items-center gap-6">
+            <div className="w-16 h-16 rounded-full bg-danger/10 flex items-center justify-center">
+              <Lock size={32} className="text-danger" />
+            </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold">Private Event</h2>
+              <p className="text-default-500">
+                This event requires an access code to view.
+              </p>
+            </div>
+            <div className="w-full flex flex-col gap-3">
+              <Input
+                label="Access Code"
+                placeholder="Enter 6-digit code"
+                value={accessCodeInput}
+                onValueChange={(val) => {
+                  setAccessCodeInput(val.replace(/[^0-9]/g, '').slice(0, 6));
+                  setAccessCodeError("");
+                }}
+                maxLength={6}
+                isInvalid={!!accessCodeError}
+                errorMessage={accessCodeError}
+                classNames={{ input: "text-center text-2xl tracking-[0.5em] font-mono" }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAccessCodeSubmit(); }}
+                autoFocus
+              />
+              <Button
+                color="primary"
+                size="lg"
+                className="w-full"
+                onPress={handleAccessCodeSubmit}
+                isDisabled={accessCodeInput.length !== 6}
+              >
+                Verify Code
+              </Button>
+            </div>
+            <Link to="/dashboard" className="text-sm text-primary hover:underline">
+              ← Back to Dashboard
+            </Link>
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-linear-to-br from-background via-default-50/50 to-background">
       {/* Hero Header */}
@@ -1714,7 +1922,7 @@ export default function EventPage() {
                   <Chip
                     size="sm"
                     variant="dot"
-                    color={event?.visibility === "public" ? "primary" : "secondary"}
+                    color={event?.visibility === "public" ? "primary" : event?.visibility === "unlisted" ? "warning" : "secondary"}
                     className="capitalize"
                   >
                     {event?.visibility}
@@ -2460,33 +2668,84 @@ export default function EventPage() {
 
                 { key: 'leaderboard', visible: hasType("points"), element: (
                 <Tab key="leaderboard" title="Leaderboard" className="p-3 md:p-6">
-                  <div className="flex justify-end mb-4 gap-2">
-                    {canJudge && (
+                  <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
+                    <div className="flex items-center gap-3">
+                      {canManage && (
+                        <Switch
+                          size="sm"
+                          isSelected={!!settings.categories_enabled}
+                          onValueChange={handleToggleCategories}
+                        >
+                          <span className="flex items-center gap-1 text-small">
+                            <Layers size={14} /> Categories
+                          </span>
+                        </Switch>
+                      )}
+                      {canManage && settings.categories_enabled && (
+                        <Button
+                          size="sm"
+                          color="primary"
+                          variant="flat"
+                          onPress={onCategoryOpen}
+                          startContent={<Plus size={14} />}
+                        >
+                          Add Category
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      {canJudge && (
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          onPress={handleUndo}
+                          startContent={<RefreshCw size={14} />}
+                        >
+                          Undo Last Score
+                        </Button>
+                      )}
                       <Button
+                        as={Link}
+                        href={`/events/${id}/leaderboard`}
                         size="sm"
+                        color="secondary"
                         variant="flat"
-                        onPress={handleUndo}
-                        startContent={<RefreshCw size={14} />}
+                        endContent={<ExternalLink size={14} />}
                       >
-                        Undo Last Score
+                        Big Screen Mode
                       </Button>
-                    )}
-                    <Button
-                      as={Link}
-                      href={`/events/${id}/leaderboard`}
-                      size="sm"
-                      color="secondary"
-                      variant="flat"
-                      endContent={<ExternalLink size={14} />}
-                    >
-                      Big Screen Mode
-                    </Button>
+                    </div>
                   </div>
                   <Leaderboard
                     teams={teams}
                     canJudge={canJudge && !isCompleted}
                     onScoreChange={handleScoreChange}
                     sortOrder={event?.settings?.leaderboard_sort_order || 'desc'}
+                    categories={categories}
+                    categoryScores={categoryScores}
+                    categoriesEnabled={!!settings.categories_enabled}
+                    canManage={canManage}
+                    onCategoryScoreChange={handleCategoryScoreChange}
+                    onEditCategory={(cat) => {
+                      setEditingCategory(cat);
+                      onCategoryOpen();
+                    }}
+                  />
+                  <CategoryModal
+                    isOpen={isCategoryOpen}
+                    onClose={() => {
+                      onCategoryClose();
+                      setEditingCategory(null);
+                    }}
+                    eventId={id}
+                    userId={user?.id}
+                    category={editingCategory}
+                    onCreated={(cat) => setCategories((prev) => [...prev, cat])}
+                    onUpdated={(cat) => setCategories((prev) => prev.map((c) => c.id === cat.id ? cat : c))}
+                    onDeleted={(catId) => {
+                      setCategories((prev) => prev.filter((c) => c.id !== catId));
+                      setCategoryScores((prev) => prev.filter((s) => s.category_id !== catId));
+                    }}
                   />
                 </Tab>
                 )},

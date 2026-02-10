@@ -16,7 +16,7 @@ import {
   Tabs,
   Tab,
 } from '@heroui/react';
-import { Search, UserPlus, Shield, Settings, Users, GripVertical, LayoutList } from 'lucide-react';
+import { Search, UserPlus, Shield, Settings, Users, GripVertical, LayoutList, Lock, Globe, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
@@ -56,8 +56,9 @@ const TAB_LABELS = {
 };
 
 const VISIBILITY = [
-  { value: 'public', label: 'Public' },
-  { value: 'private', label: 'Private' },
+  { value: 'public', label: 'Public', description: 'Anyone can discover and view this event' },
+  { value: 'unlisted', label: 'Unlisted', description: 'Only people with the link can view (hidden from dashboard)' },
+  { value: 'private', label: 'Private', description: 'Requires judge/manager role or access code' },
 ];
 
 export default function EventForm() {
@@ -79,6 +80,7 @@ export default function EventForm() {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [leaderboardSortOrder, setLeaderboardSortOrder] = useState('desc');
+  const [accessCode, setAccessCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(isEdit);
   const [error, setError] = useState('');
@@ -146,6 +148,7 @@ export default function EventForm() {
       }
       setVisibility(data.visibility || 'private');
       setBannerUrl(data.banner_url || '');
+      setAccessCode(data.access_code || '');
       const settings = data.settings || {};
       setHideAnalytics(settings.hide_analytics || false);
       setHideTimeline(settings.hide_timeline || false);
@@ -295,6 +298,7 @@ export default function EventForm() {
       event_types: normalizedTypes,
       visibility,
       banner_url: bannerUrl.trim() || null,
+      access_code: visibility === 'private' && accessCode.length === 6 ? accessCode : null,
       settings: {
         hide_analytics: hideAnalytics,
         hide_timeline: hideTimeline,
@@ -383,11 +387,6 @@ export default function EventForm() {
                     <SelectItem key={o.value}>{o.label}</SelectItem>
                   ))}
                 </Select>
-                <Select label="Visibility" selectedKeys={[visibility]} onSelectionChange={(s) => setVisibility([...s][0] || 'private')}>
-                  {VISIBILITY.map((o) => (
-                    <SelectItem key={o.value}>{o.label}</SelectItem>
-                  ))}
-                </Select>
                 <Card className="border border-default-200">
                   <CardBody className="gap-2">
                     <p className="text-sm font-medium">Tab Visibility Settings</p>
@@ -428,6 +427,69 @@ export default function EventForm() {
               }
             >
               <div className="flex flex-col gap-4">
+                {/* Visibility & Access Code */}
+                <Card className="border border-default-200">
+                  <CardBody className="gap-4">
+                    <div className="flex items-center gap-2">
+                      <Globe size={18} className="text-primary" />
+                      <h3 className="font-semibold">Visibility</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {VISIBILITY.map((v) => (
+                        <button
+                          key={v.value}
+                          type="button"
+                          onClick={() => setVisibility(v.value)}
+                          className={`flex flex-col items-start gap-1 p-3 rounded-lg border-2 transition-all text-left ${
+                            visibility === v.value
+                              ? 'border-primary bg-primary/10'
+                              : 'border-default-200 hover:border-default-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {v.value === 'public' && <Globe size={16} className="text-primary" />}
+                            {v.value === 'unlisted' && <EyeOff size={16} className="text-warning" />}
+                            {v.value === 'private' && <Lock size={16} className="text-danger" />}
+                            <span className="font-medium text-sm">{v.label}</span>
+                          </div>
+                          <span className="text-xs text-default-500">{v.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {visibility === 'private' && (
+                      <div className="border border-default-200 rounded-lg p-3 bg-default-50">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Lock size={14} className="text-danger" />
+                          <p className="text-sm font-medium">Access Code</p>
+                        </div>
+                        <p className="text-xs text-default-500 mb-3">
+                          Set a 6-digit code that viewers can enter to access this event. Leave empty to restrict access to judges and managers only.
+                        </p>
+                        <Input
+                          label="Access Code"
+                          placeholder="e.g. 123456"
+                          value={accessCode}
+                          onValueChange={(val) => setAccessCode(val.replace(/[^0-9]/g, '').slice(0, 6))}
+                          maxLength={6}
+                          description={accessCode.length > 0 && accessCode.length < 6 ? `${6 - accessCode.length} more digit(s) needed` : accessCode.length === 6 ? 'Code is ready' : 'Optional — 6 digits'}
+                          endContent={
+                            accessCode && (
+                              <Button
+                                size="sm"
+                                variant="light"
+                                isIconOnly
+                                onPress={() => setAccessCode('')}
+                              >
+                                ✕
+                              </Button>
+                            )
+                          }
+                        />
+                      </div>
+                    )}
+                  </CardBody>
+                </Card>
+
                 <Card className="border border-default-200">
                   <CardBody className="gap-4">
                     <div className="flex items-center gap-2">
@@ -637,11 +699,41 @@ export default function EventForm() {
                 <SelectItem key={o.value}>{o.label}</SelectItem>
               ))}
             </Select>
-            <Select label="Visibility" selectedKeys={[visibility]} onSelectionChange={(s) => setVisibility([...s][0] || 'private')}>
-              {VISIBILITY.map((o) => (
-                <SelectItem key={o.value}>{o.label}</SelectItem>
-              ))}
-            </Select>
+            <div>
+              <p className="text-sm font-medium mb-2">Visibility</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {VISIBILITY.map((v) => (
+                  <button
+                    key={v.value}
+                    type="button"
+                    onClick={() => setVisibility(v.value)}
+                    className={`flex flex-col items-start gap-1 p-3 rounded-lg border-2 transition-all text-left ${
+                      visibility === v.value
+                        ? 'border-primary bg-primary/10'
+                        : 'border-default-200 hover:border-default-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {v.value === 'public' && <Globe size={16} className="text-primary" />}
+                      {v.value === 'unlisted' && <EyeOff size={16} className="text-warning" />}
+                      {v.value === 'private' && <Lock size={16} className="text-danger" />}
+                      <span className="font-medium text-sm">{v.label}</span>
+                    </div>
+                    <span className="text-xs text-default-500">{v.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {visibility === 'private' && (
+              <Input
+                label="Access Code (optional)"
+                placeholder="6-digit code, e.g. 123456"
+                value={accessCode}
+                onValueChange={(val) => setAccessCode(val.replace(/[^0-9]/g, '').slice(0, 6))}
+                maxLength={6}
+                description={accessCode.length === 6 ? 'Viewers can enter this code to access the event' : 'Leave empty to restrict to judges/managers only'}
+              />
+            )}
             <div className="space-y-2">
               <p className="text-sm text-default-500">Tab Visibility Settings (for non-managers)</p>
               <Checkbox isSelected={hideAnalytics} onValueChange={setHideAnalytics}>
